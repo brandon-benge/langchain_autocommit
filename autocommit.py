@@ -107,6 +107,14 @@ def main(argv=None):
             print("   Use 'git add <files>' to stage changes, or run with --autostage")
             print(f"   Modified files: {', '.join(files) if files else 'none'}")
         return 0
+    
+    # Check for empty diff (only metadata, no real content changes)
+    diff_lines = [line for line in diff.split('\n') if line.strip() and not line.startswith('---')]
+    content_lines = [line for line in diff_lines if not line.startswith('@@') and not line.startswith('diff --git') and not line.startswith('index ')]
+    if len(content_lines) <= 1:  # Only separator or no meaningful content
+        print("📍 No meaningful changes detected.")
+        print("   Staged files contain only metadata or whitespace changes.")
+        return 0
 
     # Infer commit type/scope/ticket
     ctype = git_cfg.get("default_type", "chore")
