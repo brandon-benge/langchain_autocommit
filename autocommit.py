@@ -90,9 +90,23 @@ def main(argv=None):
 
     files = changed_files(cwd)
     diff = staged_diff_summary(cwd)
+    
+    # Check for no changes at all
+    if not files:
+        print("📍 No changes detected in the repository.")
+        print("   All files are up-to-date with the last commit.")
+        return 0
+    
+    # Check for no staged changes
     if not diff.strip():
-        print("No staged changes. Use --autostage or git add <files>.", file=sys.stderr)
-        return 2
+        if args.autostage or _bool(git_cfg.get("autostage_all", False)):
+            print("📍 No changes to commit after staging.")
+            print("   All modified files appear to have no actual differences.")
+        else:
+            print("📍 No staged changes found.")
+            print("   Use 'git add <files>' to stage changes, or run with --autostage")
+            print(f"   Modified files: {', '.join(files) if files else 'none'}")
+        return 0
 
     # Infer commit type/scope/ticket
     ctype = git_cfg.get("default_type", "chore")
