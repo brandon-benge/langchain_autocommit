@@ -141,8 +141,15 @@ def main(argv=None):
     subject = (payload.get("subject") or "").strip()
     body = (payload.get("body") or "").strip()
 
+    # Smart truncation: avoid cutting words in half
     if len(subject) > max_subject:
-        subject = subject[:max_subject]
+        truncated = subject[:max_subject]
+        # Find the last space to avoid cutting a word
+        last_space = truncated.rfind(' ')
+        if last_space > max_subject * 0.8:  # Only truncate at word boundary if we don't lose too much
+            subject = truncated[:last_space]
+        else:
+            subject = truncated  # Fall back to hard truncation if no good break point
 
     print("\n--- Proposed Commit ---")
     print(subject)
