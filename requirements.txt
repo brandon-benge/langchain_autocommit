@@ -1,6 +1,7 @@
 # Core
 langchain-core>=0.3.17
 langchain-community==0.3.7
+langchain-ollama>=1.0.0
 
 # Runtime
 typing-extensions>=4.9.0

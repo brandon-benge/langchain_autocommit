@@ -3,9 +3,13 @@ from typing import Dict
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableMap
 try:
-    from langchain_community.chat_models import ChatOllama
-except Exception:
-    from langchain_community.llms import Ollama as ChatOllama  # type: ignore
+    from langchain_ollama import ChatOllama
+except ImportError:
+    # Fallback to deprecated version if new package not available
+    try:
+        from langchain_community.chat_models import ChatOllama
+    except Exception:
+        from langchain_community.llms import Ollama as ChatOllama  # type: ignore
 
 DEFAULT_PROMPT = PromptTemplate.from_template(
     """You are a senior engineer generating a **conventional commit**.
