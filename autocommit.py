@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/Users/brandonbenge/Desktop/GitProjects/venv/bin/python3
 """
 CLI entrypoint for LangChain AutoCommit (full implementation)
 - Loads config via master.load_config()

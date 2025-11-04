@@ -1,7 +1,9 @@
-# Core
-langchain-core>=0.3.17
-langchain-community==0.3.7
-langchain-ollama>=1.0.0
+# Core - Compatible versions that work together  
+langchain-core>=0.3.17,<0.4.0
+langchain-community>=0.3.7,<0.4.0
+langchain>=0.3.7,<0.4.0
+langchain-text-splitters>=0.3.0,<0.4.0
+langchain-ollama>=0.3.10,<0.4.0
 
 # Runtime
 typing-extensions>=4.9.0
