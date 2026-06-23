@@ -1,4 +1,4 @@
-#!/Users/brandonbenge/Desktop/GitProjects/venv/bin/python3
+#!/usr/bin/env python3
 """
 CLI entrypoint for LangChain AutoCommit (full implementation)
 - Loads config via master.load_config()
@@ -6,35 +6,13 @@ CLI entrypoint for LangChain AutoCommit (full implementation)
 - Invokes LangChain chain to generate a conventional commit
 - Applies git commit (and optional push)
 """
-import os, sys, json, argparse
+import os, sys, json, argparse, getpass
 from master import load_config
 
 # LangChain commit generator
 from chains.commit_chain import build_chain
-
-def safe_int(value, default=0):
-    """Convert value to int, handling YAML values with inline comments."""
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        # Extract value before any comment (space + #)
-        value = value.split('#')[0].strip()
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return default
-
-def safe_float(value, default=0.0):
-    """Convert value to float, handling YAML values with inline comments."""
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        # Extract value before any comment (space + #)
-        value = value.split('#')[0].strip()
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return default
+from scripts.llm_provider import resolve_llm, build_fallback_llm
+from scripts.keychain import set_api_key
 
 # Git helpers (pure subprocess; no external SDKs)
 from scripts.git_utils import (
@@ -67,6 +45,7 @@ def main(argv=None):
     ap.add_argument("--amend", action="store_true", help="Amend previous commit (no edit)")
     ap.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt and proceed")
     ap.add_argument("--show-config", action="store_true", help="Print loaded config and exit")
+    ap.add_argument("--setup-key", action="store_true", help="Store OpenAI API key in macOS Keychain and exit")
     args = ap.parse_args(argv)
 
     cfg = load_config()
@@ -74,9 +53,21 @@ def main(argv=None):
         print(json.dumps(cfg, indent=2))
         return 0
 
+    if args.setup_key:
+        kc = cfg.get("llm", {}).get("primary", {}).get("keychain", {})
+        service = kc.get("service", "langchain_autocommit")
+        key = kc.get("key", "openai_api_key")
+        api_key = getpass.getpass(f"Enter OpenAI API key (stored as {service}/{key}): ")
+        if not api_key:
+            print("No key entered. Aborting.")
+            return 1
+        set_api_key(service, key, api_key)
+        print(f"  API key stored in macOS Keychain ({service}/{key}).")
+        return 0
+
     llm_cfg = cfg.get("llm", {})
     git_cfg = cfg.get("git", {})
-    max_subject = safe_int(git_cfg.get("max_subject_length", 72), 72)
+    max_subject = int(git_cfg.get("max_subject_length", 72))
 
     # Working directory is the repo root we run from
     cwd = os.getcwd()
@@ -131,12 +122,9 @@ def main(argv=None):
         ticket = find_ticket(branch, pattern) or ""
 
     # --- Build and run the LangChain commit generator ---
-    chain = build_chain(
-        base_url=llm_cfg.get("base_url", "http://localhost:11434"),
-        model=llm_cfg.get("model", "qwen3:8b"),
-        temperature=safe_float(llm_cfg.get("temperature", 0.2), 0.2),
-        max_tokens=safe_int(llm_cfg.get("max_tokens", 512), 512),
-    )
+    llm_model, provider_used = resolve_llm(llm_cfg)
+    print(f"  Using provider: {provider_used}")
+    chain = build_chain(llm_model)
 
     inputs = dict(
         type=ctype,
@@ -147,7 +135,18 @@ def main(argv=None):
         max_subject_length=max_subject,
     )
 
-    raw = chain.invoke(inputs)
+    raw = None
+    try:
+        raw = chain.invoke(inputs)
+    except Exception as e:
+        if provider_used == "openai":
+            print(f"  Primary provider failed during generation ({e}). Falling back to Ollama.")
+            fb_llm = build_fallback_llm(llm_cfg)
+            chain = build_chain(fb_llm)
+            raw = chain.invoke(inputs)
+        else:
+            raise
+
     content = getattr(raw, "content", raw)
 
     # Parse JSON strictly, with a best-effort fallback

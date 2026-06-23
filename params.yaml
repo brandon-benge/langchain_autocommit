@@ -1,25 +1,37 @@
-project_name: "LangChain AutoCommit"  # Name of the project, used for identification and display purposes
-python_version: "3.10"  # Python version to create and manage the virtual environment with, ensuring compatibility
-venv_dir: "../venv"  # Filesystem path where the Python virtual environment will be created and stored
+project_name: "LangChain AutoCommit"
+python_version: "3.10"
+venv_dir: "../venv"
 
 llm:
-  provider: "ollama"  # Specifies which language model service to use for generating text or code
-  base_url: "http://localhost:11434"  # URL endpoint where the LLM API is hosted and accessed
-  model: "qwen3:8b"  # The specific LLM model variant selected for generating responses
-  temperature: 0.2  # Controls randomness in output; lower values produce more predictable results, higher values add creativity
-  max_tokens: 4096  # Maximum length (in tokens) of the generated response to limit output size and cost
+  primary:
+    provider: "deepseek"
+    base_url: "https://opencode.ai/zen/go/v1"
+    model: "deepseek-v4-flash"
+    temperature: 0.2
+    max_tokens: 512
+    timeout: 60
+    keychain:
+      service: "langchain_autocommit"
+      key: "openai_api_key"
+
+  fallback:
+    provider: "ollama"
+    base_url: "http://localhost:11434"
+    model: "qwen3:8b"
+    temperature: 0.2
+    max_tokens: 4096
 
 git:
-  autostage_all: true  # If true, automatically stages all changed files before committing, simplifying workflow
-  signoff: true  # Adds a 'Signed-off-by' line in commits for contributor certification when true
-  push_after_commit: true  # Automatically push commits to the remote repository after committing, enabling continuous integration
-  allow_amend: false  # Allows amending the previous commit instead of creating a new one, useful for quick fixes
-  conventional: true  # Enforces conventional commit message format to maintain consistent, structured commit history
-  default_type: "chore"  # Default commit type used when no specific type is provided, categorizing the commit purpose
-  scope_from_folder: true  # Derives the commit scope from the folder name where changes were made, adding context to messages
-  max_subject_length: 100  # Maximum character length for the commit message subject line to keep messages concise and readable
-  ticket_regex: "[A-Z]{2,}-\d+"  # Regular expression pattern to detect ticket or issue IDs within commit messages for tracking
+  autostage_all: true
+  signoff: true
+  push_after_commit: true
+  allow_amend: false
+  conventional: true
+  default_type: "chore"
+  scope_from_folder: true
+  max_subject_length: 100
+  ticket_regex: '[A-Z]{2,}-\d+'
 
 paths:
-  logs_dir: "logs"  # Directory path where application logs are stored for debugging and auditing
-  temp_dir: "tmp"  # Location for temporary files and caches that can be safely deleted or regenerated as needed
+  logs_dir: "logs"
+  temp_dir: "tmp"

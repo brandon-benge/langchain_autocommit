@@ -1,15 +1,5 @@
-# Uses LangChain primitives only to generate a conventional commit message from git diff and context.
-from typing import Dict
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough, RunnableMap
-try:
-    from langchain_ollama import ChatOllama
-except ImportError:
-    # Fallback to deprecated version if new package not available
-    try:
-        from langchain_community.chat_models import ChatOllama
-    except Exception:
-        from langchain_community.llms import Ollama as ChatOllama  # type: ignore
+from langchain_core.runnables import RunnableMap
 
 DEFAULT_PROMPT = PromptTemplate.from_template(
     """You are a senior engineer generating a **detailed, comprehensive conventional commit message**.
@@ -49,20 +39,15 @@ Return exactly this JSON:
 """
 )
 
-def build_chain(base_url: str, model: str, temperature: float, max_tokens: int):
-    llm = ChatOllama(
-        base_url=base_url,
-        model=model,
-        temperature=temperature,
-        num_predict=max_tokens,
-    )
+
+def build_chain(llm):
     chain = (
         RunnableMap({
             "type": lambda x: x.get("type"),
             "scope": lambda x: x.get("scope"),
             "ticket": lambda x: x.get("ticket") or "",
             "changed_files": lambda x: ", ".join(x.get("changed_files", [])[:20]),
-            "diff_summary": lambda x: x.get("diff_summary")[:8000],  # Increased for more context
+            "diff_summary": lambda x: x.get("diff_summary")[:8000],
             "max_subject_length": lambda x: x.get("max_subject_length", 72),
         })
         | DEFAULT_PROMPT

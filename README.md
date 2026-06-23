@@ -1,43 +1,47 @@
 
-# 🧠 LangChain AutoCommit v2
+# LangChain AutoCommit v2
 
-**LangChain AutoCommit** is a **local-only, agentic Git automation tool**.  
-It reads configuration from a `params.yaml` file, uses a local **Ollama LLM** (like `qwen3:8b`), and generates **conventional commit messages** based on the current Git diff.
+**LangChain AutoCommit** is an **agentic Git automation tool** with automatic API fallback.  
+It reads configuration from a `params.yaml` file, uses **OpenAI via opencode.ai** as the primary LLM, and falls back to a **local Ollama model** if the API is unavailable. It generates **conventional commit messages** based on the current Git diff.
 
 This version (v2) makes **`autocommit.py`** the **only CLI entrypoint**.  
-All configuration logic is downstream in `master.py`, following your project rule that `master.py` should never be directly executed.
+All configuration logic is downstream in `master.py`.
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 
 | Path | Description |
 |------|--------------|
 | `autocommit.py` | Main CLI entrypoint — runs LangChain commit chain and handles Git logic. |
-| `master.py` | Utility module that loads and parses `params.yaml` (downstream only). |
+| `master.py` | Utility module that loads and parses `params.yaml`. |
 | `params.yaml` | Central config file (no hardcoded variables anywhere). |
-| `chains/commit_chain.py` | Defines the LangChain pipeline using `PromptTemplate` + `ChatOllama`. |
+| `chains/commit_chain.py` | Defines the LangChain pipeline using `PromptTemplate` + any chat model. |
 | `scripts/git_utils.py` | Lightweight Git wrapper using subprocess (no external SDKs). |
-| `requirements.txt` | Local-only dependencies (Apache/MIT-licensed). |
+| `scripts/llm_provider.py` | Resolves the LLM provider with automatic fallback (OpenAI → Ollama). |
+| `scripts/keychain.py` | macOS Keychain wrapper for secure API key storage. |
+| `requirements.txt` | Dependencies (Apache/MIT-licensed). |
 | `run_venv.sh` | Script to bootstrap a Python virtual environment. |
 | `README.md` | You are here. |
 
 ---
 
-## 🚀 How It Works
+## How It Works
 
 ```mermaid
 flowchart TD
     A["User CLI - autocommit.py"] --> B["load_config() from master.py"]
     B --> C["Parse params.yaml → config dict"]
-    C --> D["chains.commit_chain.build_chain()"]
-    D --> E["ChatOllama local LLM"]
-    E --> F["LLM generates JSON: subject + body"]
-    F --> G["scripts.git_utils: git commit/push"]
-    G --> H["Repository updated"]
+    C --> D["scripts.llm_provider.resolve_llm()"]
+    D --> E{"OpenAI API\n(opencode.ai)"}
+    E -->|"success"| F["ChatOpenAI generates commit"]
+    E -->|"any failure"| G["Fallback: ChatOllama (local)"]
+    F --> H["scripts.git_utils: git commit/push"]
+    G --> H
+    H --> I["Repository updated"]
 ```
 
-### 🔁 Control Flow Summary
+### Control Flow Summary
 
 1. **User runs**  
    ```bash
@@ -48,9 +52,10 @@ flowchart TD
    - Imports `load_config()` from `master.py`.
    - Reads `params.yaml` into a Python dictionary.
    - Determines what files changed, which branch is active, etc.
-   - Builds a LangChain pipeline (`PromptTemplate` → `ChatOllama`).
+   - Calls `resolve_llm()` to select a provider (OpenAI API → Ollama fallback).
+   - Builds a LangChain pipeline with the resolved LLM.
 
-3. **The LLM (qwen3:8b, Mistral, etc.)**
+3. **The LLM (gpt-4o via opencode.ai, falling back to qwen3:8b locally)**
    - Takes Git diff summary + context.
    - Generates a structured JSON object:
      ```json
@@ -67,7 +72,7 @@ flowchart TD
 
 ---
 
-## 🧩 Configuration: `params.yaml`
+## Configuration: `params.yaml`
 
 All runtime values are read from here.  
 No constants are hardcoded in the codebase.
@@ -76,11 +81,23 @@ No constants are hardcoded in the codebase.
 
 ```yaml
 llm:
-  provider: "ollama"
-  base_url: "http://localhost:11434"
-  model: "qwen3:8b:latest"
-  temperature: 0.2
-  max_tokens: 512
+  primary:
+    provider: "openai"
+    base_url: "https://opencode.ai/zen/go/v1"
+    model: "deepseek-v4-flash"
+    temperature: 0.2
+    max_tokens: 512
+    timeout: 15
+    keychain:
+      service: "langchain_autocommit"
+      key: "openai_api_key"
+
+  fallback:
+    provider: "ollama"
+    base_url: "http://localhost:11434"
+    model: "qwen3:8b"
+    temperature: 0.2
+    max_tokens: 4096
 
 git:
   autostage_all: false
@@ -98,10 +115,15 @@ git:
 
 | Section | Key | Meaning |
 |----------|-----|---------|
-| **llm** | `provider` | Local model backend (`ollama`) |
-|  | `model` | Model name, e.g. `qwen3:8b`, `mistral`, `llama3` |
+| **llm.primary** | `provider` | Primary LLM backend (`openai`) |
+|      | `base_url` | API endpoint (e.g. `https://opencode.ai/zen/go/v1`) |
+|  | `model` | Model name, e.g. `deepseek-v4-flash`, `deepseek-v4-pro` |
+|  | `timeout` | Seconds before triggering fallback |
+|  | `keychain.service` | macOS Keychain service name for API key lookup |
+|  | `keychain.key` | macOS Keychain key name for API key lookup |
+| **llm.fallback** | `provider` | Fallback backend (`ollama`) |
+|  | `model` | Model name, e.g. `qwen3:8b` |
 |  | `temperature` | Sampling temperature (lower = more deterministic) |
-|  | `max_tokens` | Max tokens for generation |
 | **git** | `autostage_all` | If true, automatically stages all changes |
 |  | `conventional` | Enforces `<type>(<scope>): <subject>` style |
 |  | `ticket_regex` | Extracts ticket ID from branch name |
@@ -109,9 +131,9 @@ git:
 
 ---
 
-## ⚙️ Installation & Setup
+## Installation & Setup
 
-### 1️⃣ Create a virtual environment
+### 1 Create a virtual environment
 
 ```bash
 chmod +x run_venv.sh
@@ -119,14 +141,33 @@ chmod +x run_venv.sh
 source ../venv/bin/activate
 ```
 
-### 2️⃣ Ensure Ollama is running
+### 2 Store your OpenAI API key in the macOS Keychain
+
+```bash
+python autocommit.py --setup-key
+```
+
+You will be prompted for your API key. It is stored securely in the macOS Keychain — never in plaintext files or environment variables.
+
+The keychain service name and key name are configurable in `params.yaml`:
+```yaml
+llm:
+  primary:
+    keychain:
+      service: "langchain_autocommit"   # change as needed
+      key: "openai_api_key"             # change as needed
+```
+
+### 3 Ensure Ollama is running (fallback)
+
+Ollama is only used if the primary API is unreachable. To enable fallback:
 
 ```bash
 ollama serve &
 ollama pull qwen3:8b
 ```
 
-### 3️⃣ Run from any Git repo
+### 4 Run from any Git repo
 
 ```bash
 python /path/to/autocommit.py --autostage
@@ -140,7 +181,7 @@ sudo ln -s "$(pwd)/autocommit.py" /usr/local/bin/autocommit
 autocommit --autostage
 ```
 
-### 4️⃣ Available CLI Flags
+### Available CLI Flags
 
 | Flag | Description |
 |------|-------------|
@@ -149,13 +190,16 @@ autocommit --autostage
 | `--amend` | Amend previous commit |
 | `-y, --yes` | Skip confirmation prompt |
 | `--show-config` | (debug) Show parsed YAML config |
+| `--setup-key` | Store OpenAI API key in macOS Keychain |
 
 ---
 
-## 🧠 Example Interaction
+## Example Interaction
 
 ```bash
 $ autocommit --autostage
+
+  Using provider: openai
 
 --- Proposed Commit ---
 feat(auth): add token refresh support
@@ -171,22 +215,28 @@ Committed.
 
 ---
 
-## 🧰 Internals
+## Internals
 
 ### `master.py`
-A small utility that only:
-1. Reads `params.yaml`.
-2. Converts it into nested Python dicts.
-3. Exports `load_config()` to downstream scripts.
+Reads `params.yaml` and exports `load_config()` to downstream scripts.
+
+### `scripts/keychain.py`
+Thin wrapper around `keyring` for secure API key storage in the macOS Keychain.
+
+### `scripts/llm_provider.py`
+`resolve_llm(cfg)` resolves the LLM provider:
+- Tries the primary provider (`ChatOpenAI` pointing at `https://opencode.ai/zen/go/v1`).
+- If the API key is missing, the request fails, times out, or raises any exception, it silently falls back to the local Ollama model.
+- Returns a tuple of `(ChatModel, provider_name)`.
 
 ### `autocommit.py`
-- Imports `load_config()` and other helpers.
-- Orchestrates Git diff collection and LLM invocation.
+- Imports `load_config()`, `resolve_llm()`, and other helpers.
+- Orchestrates Git diff collection, provider resolution, and LLM invocation.
 - Commits changes using results from the chain.
 
 ### `chains/commit_chain.py`
 - Defines a `PromptTemplate` describing conventional commit rules.
-- Uses `ChatOllama` as the model backend.
+- Accepts any LangChain chat model (`ChatOpenAI` or `ChatOllama`).
 - Returns LLM output as a JSON object.
 
 ### `scripts/git_utils.py`
@@ -200,9 +250,9 @@ A small utility that only:
 
 ---
 
-## 🧩 LangChain Design Pattern
+## LangChain Design Pattern
 
-The chain in `chains/commit_chain.py` is deliberately simple:
+The chain in `chains/commit_chain.py` is deliberately simple and provider-agnostic:
 
 ```python
 chain = (
@@ -212,31 +262,32 @@ chain = (
         "diff_summary": lambda x: x.get("diff_summary")[:4000],
     })
     | PromptTemplate.from_template(COMMIT_PROMPT)
-    | ChatOllama(model="qwen3-coder:30b:latest", base_url="http://localhost:11434")
+    | llm  # Any LangChain chat model
 )
 ```
 
 This keeps the project fully **LangChain-native**, using:
 - `RunnableMap` for variable injection,
 - `PromptTemplate` for input templating,
-- `ChatOllama` for local LLM inference.
+- A configurable LLM resolved at runtime by `scripts/llm_provider.py`.
 
 ---
 
-## 🧱 Design Principles
+## Design Principles
 
 | Principle | Implementation |
 |------------|----------------|
 | **YAML-Driven Config** | All parameters read from `params.yaml` |
-| **Local-Only Execution** | Uses `ollama` HTTP API; no external SaaS |
+| **Secure Key Storage** | API key stored in macOS Keychain via `keyring` |
+| **Automatic Fallback** | Primary API failure → local Ollama, no config changes needed |
+| **Provider Agnostic** | Chain accepts any LangChain chat model |
 | **Apache / MIT-Only Licenses** | LangChain is MIT; all other libs are stdlib |
 | **No Hardcoded Values** | Paths, model names, thresholds, etc. come from YAML |
 | **CLI Simplicity** | Single entrypoint (`autocommit`) for easy `$PATH` usage |
-| **Downstream Master** | `master.py` provides utilities, never invoked directly |
 
 ---
 
-## 🧩 Extending the System
+## Extending the System
 
 This architecture is modular and supports additional chains easily.
 
@@ -249,19 +300,22 @@ This architecture is modular and supports additional chains easily.
 
 ---
 
-## 🪪 License
+## License
 
 - Project: **Apache-2.0**
 - Dependencies:
   - **LangChain** – MIT
+  - **OpenAI Python SDK** – MIT
+  - **keyring** – MIT
   - **Ollama** – Apache 2.0 (for Granite, Mistral models)
   - **Python stdlib** – PSF License
 
 ---
 
-🧰 **In short:**  
+**In short:**  
 You can now type `autocommit` from *any Git repo*, and it will:
 1. Read your YAML config,
 2. Analyze your diff,
-3. Generate a conventional commit via LLM,
-4. Apply it — all without touching the cloud.
+3. Try to generate a conventional commit via the OpenAI API,
+4. Fall back to a local Ollama model if the API is unavailable,
+5. Apply the commit — securely and automatically.
