@@ -14,7 +14,7 @@ def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:
         kc = primary.get("keychain", {})
         api_key = get_api_key(
             kc.get("service", "langchain_autocommit"),
-            kc.get("key", "openai_api_key"),
+            kc.get("key", "opencode_api_key"),
         )
         if not api_key:
             raise ValueError("No API key found in macOS Keychain")
@@ -27,7 +27,7 @@ def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:
             max_tokens=int(primary.get("max_tokens", 512)),
             timeout=int(primary.get("timeout", 60)),
         )
-        return llm, "openai"
+        return llm, "opencode"
 
     except Exception as e:
         print(f"  Primary provider setup failed ({e}). Falling back to Ollama.")

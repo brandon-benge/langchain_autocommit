@@ -4,7 +4,6 @@ venv_dir: "../venv"
 
 llm:
   primary:
-    provider: "deepseek"
     base_url: "https://opencode.ai/zen/go/v1"
     model: "deepseek-v4-flash"
     temperature: 0.2
@@ -12,10 +11,9 @@ llm:
     timeout: 60
     keychain:
       service: "langchain_autocommit"
-      key: "openai_api_key"
+      key: "opencode_api_key"
 
   fallback:
-    provider: "ollama"
     base_url: "http://localhost:11434"
     model: "qwen3:8b"
     temperature: 0.2

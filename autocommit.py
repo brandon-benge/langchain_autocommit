@@ -45,7 +45,7 @@ def main(argv=None):
     ap.add_argument("--amend", action="store_true", help="Amend previous commit (no edit)")
     ap.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt and proceed")
     ap.add_argument("--show-config", action="store_true", help="Print loaded config and exit")
-    ap.add_argument("--setup-key", action="store_true", help="Store OpenAI API key in macOS Keychain and exit")
+    ap.add_argument("--setup-key", action="store_true", help="Store API key in macOS Keychain and exit")
     args = ap.parse_args(argv)
 
     cfg = load_config()
@@ -56,8 +56,8 @@ def main(argv=None):
     if args.setup_key:
         kc = cfg.get("llm", {}).get("primary", {}).get("keychain", {})
         service = kc.get("service", "langchain_autocommit")
-        key = kc.get("key", "openai_api_key")
-        api_key = getpass.getpass(f"Enter OpenAI API key (stored as {service}/{key}): ")
+        key = kc.get("key", "opencode_api_key")
+        api_key = getpass.getpass(f"Enter API key (stored as {service}/{key}): ")
         if not api_key:
             print("No key entered. Aborting.")
             return 1
@@ -139,7 +139,7 @@ def main(argv=None):
     try:
         raw = chain.invoke(inputs)
     except Exception as e:
-        if provider_used == "openai":
+        if provider_used == "opencode":
             print(f"  Primary provider failed during generation ({e}). Falling back to Ollama.")
             fb_llm = build_fallback_llm(llm_cfg)
             chain = build_chain(fb_llm)
