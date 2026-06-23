@@ -2,7 +2,7 @@
 # 🧠 LangChain AutoCommit v2
 
 **LangChain AutoCommit** is a **local-only, agentic Git automation tool**.  
-It reads configuration from a `params.yaml` file, uses a local **Ollama LLM** (like `granite4`), and generates **conventional commit messages** based on the current Git diff.
+It reads configuration from a `params.yaml` file, uses a local **Ollama LLM** (like `qwen3:8b`), and generates **conventional commit messages** based on the current Git diff.
 
 This version (v2) makes **`autocommit.py`** the **only CLI entrypoint**.  
 All configuration logic is downstream in `master.py`, following your project rule that `master.py` should never be directly executed.
@@ -50,7 +50,7 @@ flowchart TD
    - Determines what files changed, which branch is active, etc.
    - Builds a LangChain pipeline (`PromptTemplate` → `ChatOllama`).
 
-3. **The LLM (Granite4, Mistral, etc.)**
+3. **The LLM (qwen3:8b, Mistral, etc.)**
    - Takes Git diff summary + context.
    - Generates a structured JSON object:
      ```json
@@ -78,7 +78,7 @@ No constants are hardcoded in the codebase.
 llm:
   provider: "ollama"
   base_url: "http://localhost:11434"
-  model: "granite4"
+  model: "qwen3:8b"
   temperature: 0.2
   max_tokens: 512
 
@@ -99,7 +99,7 @@ git:
 | Section | Key | Meaning |
 |----------|-----|---------|
 | **llm** | `provider` | Local model backend (`ollama`) |
-|  | `model` | Model name, e.g. `granite4`, `mistral`, `llama3` |
+|  | `model` | Model name, e.g. `qwen3:8b`, `mistral`, `llama3` |
 |  | `temperature` | Sampling temperature (lower = more deterministic) |
 |  | `max_tokens` | Max tokens for generation |
 | **git** | `autostage_all` | If true, automatically stages all changes |
@@ -123,7 +123,7 @@ source ../venv/bin/activate
 
 ```bash
 ollama serve &
-ollama pull granite4
+ollama pull qwen3:8b
 ```
 
 ### 3️⃣ Run from any Git repo
@@ -212,7 +212,7 @@ chain = (
         "diff_summary": lambda x: x.get("diff_summary")[:4000],
     })
     | PromptTemplate.from_template(COMMIT_PROMPT)
-    | ChatOllama(model="granite4", base_url="http://localhost:11434")
+    | ChatOllama(model="qwen3:8b", base_url="http://localhost:11434")
 )
 ```
 

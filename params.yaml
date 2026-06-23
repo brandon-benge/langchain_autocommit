@@ -5,9 +5,9 @@ venv_dir: "../venv"  # Filesystem path where the Python virtual environment will
 llm:
   provider: "ollama"  # Specifies which language model service to use for generating text or code
   base_url: "http://localhost:11434"  # URL endpoint where the LLM API is hosted and accessed
-  model: "granite4"  # The specific LLM model variant selected for generating responses
+  model: "qwen3:8b"  # The specific LLM model variant selected for generating responses
   temperature: 0.2  # Controls randomness in output; lower values produce more predictable results, higher values add creativity
-  max_tokens: 2024  # Maximum length (in tokens) of the generated response to limit output size and cost
+  max_tokens: 4096  # Maximum length (in tokens) of the generated response to limit output size and cost
 
 git:
   autostage_all: true  # If true, automatically stages all changed files before committing, simplifying workflow
@@ -17,7 +17,7 @@ git:
   conventional: true  # Enforces conventional commit message format to maintain consistent, structured commit history
   default_type: "chore"  # Default commit type used when no specific type is provided, categorizing the commit purpose
   scope_from_folder: true  # Derives the commit scope from the folder name where changes were made, adding context to messages
-  max_subject_length: 72  # Maximum character length for the commit message subject line to keep messages concise and readable
+  max_subject_length: 100  # Maximum character length for the commit message subject line to keep messages concise and readable
   ticket_regex: "[A-Z]{2,}-\d+"  # Regular expression pattern to detect ticket or issue IDs within commit messages for tracking
 
 paths:

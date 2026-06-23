@@ -133,7 +133,7 @@ def main(argv=None):
     # --- Build and run the LangChain commit generator ---
     chain = build_chain(
         base_url=llm_cfg.get("base_url", "http://localhost:11434"),
-        model=llm_cfg.get("model", "granite4"),
+        model=llm_cfg.get("model", "qwen3:8b"),
         temperature=safe_float(llm_cfg.get("temperature", 0.2), 0.2),
         max_tokens=safe_int(llm_cfg.get("max_tokens", 512), 512),
     )
