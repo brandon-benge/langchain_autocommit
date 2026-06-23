@@ -78,7 +78,7 @@ No constants are hardcoded in the codebase.
 llm:
   provider: "ollama"
   base_url: "http://localhost:11434"
-  model: "qwen3:8b"
+  model: "qwen3:8b:latest"
   temperature: 0.2
   max_tokens: 512
 
@@ -212,7 +212,7 @@ chain = (
         "diff_summary": lambda x: x.get("diff_summary")[:4000],
     })
     | PromptTemplate.from_template(COMMIT_PROMPT)
-    | ChatOllama(model="qwen3:8b", base_url="http://localhost:11434")
+    | ChatOllama(model="qwen3-coder:30b:latest", base_url="http://localhost:11434")
 )
 ```
 
