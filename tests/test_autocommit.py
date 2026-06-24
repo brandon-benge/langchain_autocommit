@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from autocommit import _bool
+from autocommit import _bool, _merge_flag
 
 
 class TestBoolHelper:
@@ -29,6 +29,20 @@ class TestBoolHelper:
 
     def test_non_bool_string(self):
         assert _bool("random") is False
+
+
+class TestMergeFlag:
+    def test_flag_wins_over_config(self):
+        assert _merge_flag(True, False) is True
+        assert _merge_flag(False, True) is False
+
+    def test_none_flag_uses_config(self):
+        assert _merge_flag(None, True) is True
+        assert _merge_flag(None, False) is False
+
+    def test_none_flag_and_no_config_uses_default(self):
+        assert _merge_flag(None, None, default=True) is True
+        assert _merge_flag(None, None, default=False) is False
 
 
 class TestCliArgs:
@@ -93,6 +107,28 @@ class TestCliArgs:
                     result = main()
                     assert result == 0
 
+    def test_yes_flag_skips_confirmation(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "test", "body": "test body"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+
     def test_fallback_during_generation(self, mocker):
         mocker.patch("autocommit.load_config", return_value={
             "llm": {
@@ -101,21 +137,167 @@ class TestCliArgs:
             },
             "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False},
         })
-        mocker.patch("autocommit.changed_files", return_value=["a.py"])
-        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py")
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
         mocker.patch("autocommit.current_branch", return_value="main")
 
         mock_llm = mocker.MagicMock()
-        mock_llm.invoke.side_effect = [
+        mock_llm.side_effect = [
             Exception("Primary timeout"),
             mocker.MagicMock(content='{"subject": "fallback", "body": "used ollama"}'),
         ]
         mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
         mock_fb = mocker.MagicMock()
+        mock_fb.return_value = mocker.MagicMock(content='{"subject": "retry", "body": "ok"}')
         mocker.patch("autocommit.build_fallback_llm", return_value=mock_fb)
-        mock_fb.invoke.return_value = mocker.MagicMock(content='{"subject": "retry", "body": "ok"}')
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+        mock_fb.return_value = mocker.MagicMock(content='{"subject": "retry", "body": "ok"}')
 
         with patch.object(sys, "argv", ["autocommit.py", "-y"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+
+    def test_context_passed_to_inputs(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "test", "body": "test body"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y", "-c", "refactored the auth module"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+            prompt = str(mock_llm.call_args[0][0])
+            assert "refactored the auth module" in prompt
+
+    def test_type_override(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "chore", "conventional": True, "scope_from_folder": False},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["docs/guide.md", "src/util.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M docs/guide.md\nM src/util.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "test", "body": "test body"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y", "-t", "docs"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+            prompt = str(mock_llm.call_args[0][0])
+            assert "docs" in prompt
+
+    def test_scope_override(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "feat", "conventional": False, "scope_from_folder": True},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "test", "body": "test body"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y", "-s", "auth"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+            prompt = str(mock_llm.call_args[0][0])
+            assert "auth" in prompt
+
+    def test_ticket_override(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "test", "body": "test body"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y", "--ticket", "PROJ-42"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+            prompt = str(mock_llm.call_args[0][0])
+            assert "PROJ-42" in prompt
+
+    def test_committer_appended_to_body(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "test", "body": "did some work"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mock_commit = mocker.patch("autocommit.commit")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y", "-n", "Brandon"]):
+            from autocommit import main
+            result = main()
+            assert result == 0
+            call_args, _ = mock_commit.call_args
+            _, _, body = call_args[0], call_args[1], call_args[2]
+            assert body == "did some work\n\nCommitter: Brandon"
+
+    def test_max_subject_length_override(self, mocker):
+        mocker.patch("autocommit.load_config", return_value={
+            "llm": {"primary": {"keychain": {"service": "s", "key": "k"}},
+                    "fallback": {"model": "x", "base_url": "http://localhost:11434"}},
+            "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False,
+                    "max_subject_length": 72},
+        })
+        mocker.patch("autocommit.changed_files", return_value=["a.py", "b.py"])
+        mocker.patch("autocommit.staged_diff_summary", return_value="M a.py\nM b.py\n---\n 2 files changed")
+        mocker.patch("autocommit.current_branch", return_value="main")
+        mock_llm = mocker.MagicMock()
+        mock_llm.return_value = mocker.MagicMock(
+            content='{"subject": "' + "a" * 50 + '", "body": "test body"}'
+        )
+        mocker.patch("autocommit.resolve_llm", return_value=(mock_llm, "opencode"))
+        mocker.patch("autocommit.commit")
+        mocker.patch("autocommit.push")
+
+        with patch.object(sys, "argv", ["autocommit.py", "-y", "--max-subject-length", "10"]):
             from autocommit import main
             result = main()
             assert result == 0

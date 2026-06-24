@@ -200,14 +200,34 @@ autocommit --autostage
 
 ### Available CLI Flags
 
+#### User Input
+| Flag | Description |
+|------|-------------|
+| `-c, --context TEXT` | Optional context describing what you changed and why |
+| `-n, --committer TEXT` | Committer name to include in the commit body |
+
+#### Override Flags (CLI wins over `params.yaml`)
+| Flag | Description | Overrides |
+|------|-------------|-----------|
+| `-t, --type TYPE` | Override commit type (`feat`, `fix`, `docs`, `test`, `chore`) | `git.default_type` + file inference |
+| `-s, --scope SCOPE` | Override commit scope (e.g. `auth`, `api`, `ui`) | `git.scope_from_folder` |
+| `--ticket TICKET` | Override ticket ID | `git.ticket_regex` extraction |
+| `--max-subject-length N` | Override max subject line length | `git.max_subject_length` |
+| `--autostage` / `--no-autostage` | Enable/disable auto-staging all files | `git.autostage_all` |
+| `--amend` / `--no-amend` | Enable/disable amending previous commit | `git.allow_amend` |
+| `--push` / `--no-push` | Enable/disable auto-push after commit | `git.push_after_commit` |
+| `--signoff` / `--no-signoff` | Enable/disable Signed-off-by trailer | `git.signoff` |
+| `--conventional` / `--no-conventional` | Enable/disable conventional commit format | `git.conventional` |
+
+#### Action Flags
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Show proposed commit without applying it |
-| `--autostage` | Automatically stage all modified files |
-| `--amend` | Amend previous commit |
 | `-y, --yes` | Skip confirmation prompt |
 | `--show-config` | (debug) Show parsed YAML config |
-| `--setup-key` | Store API key in macOS Keychain |
+| `--setup-key` | Store API key in macOS Keychain (prompts for key) |
+
+All boolean flags (`--autostage`, `--amend`, `--push`, `--signoff`, `--conventional`) support `--flag` to enable and `--no-flag` to disable. When omitted, the value from `params.yaml` is used.
 
 ---
 

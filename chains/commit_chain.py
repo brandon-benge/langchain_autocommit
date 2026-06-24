@@ -19,13 +19,22 @@ Follow the rules strictly:
 - Include technical details that would help reviewers understand the changes
 - Reference specific functions, classes, or modules that were modified
 
-Inputs:
+Inputs (primary — from git diff):
 - type: {type}
 - scope: {scope}
 - ticket: {ticket}
 - changed_files: {changed_files}
 - diff_summary:
 {diff_summary}
+
+User-provided context (secondary — describes intent):
+{user_context}
+
+Instructions:
+- The git diff above is the primary source of truth for what changed.
+- If user context is provided, use it to understand motivation and intent,
+  but verify it against the actual diff.
+- If no user context is provided, ignore this section.
 
 Now produce:
 1) subject (one concise line that summarizes the key change)
@@ -49,6 +58,7 @@ def build_chain(llm):
             "changed_files": lambda x: ", ".join(x.get("changed_files", [])[:20]),
             "diff_summary": lambda x: x.get("diff_summary")[:8000],
             "max_subject_length": lambda x: x.get("max_subject_length", 72),
+            "user_context": lambda x: x.get("user_context", ""),
         })
         | DEFAULT_PROMPT
         | llm
