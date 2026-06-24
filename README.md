@@ -128,6 +128,26 @@ git:
 
 ---
 
+## How Type, Scope, and Ticket Are Resolved
+
+You don't need to pass any flags — these values are inferred automatically from your repository state:
+
+| Value | Source | Default | Example |
+|-------|--------|---------|---------|
+| **type** | File path heuristics: `tests/` or `*_test.py` → `test`, `docs/` or `*.md` → `docs`, `scripts/` or `*.sh` → `chore`, everything else → `feat` | `git.default_type` in `params.yaml` (`"chore"`) | `feat`, `docs`, `test` |
+| **scope** | Basename of the current working directory (the repo folder name) | `git.scope_from_folder: true` | `langchain_autocommit` |
+| **ticket** | Regex match against the current git branch name | `git.ticket_regex` in `params.yaml` (`[A-Z]{2,}-\d+`) | `PROJ-123` from branch `feat/PROJ-123-add-auth` |
+
+These are assembled into an `inputs` dict and passed to the LLM prompt as template variables (`{type}`, `{scope}`, `{ticket}`). The LLM then generates a commit message like:
+
+```
+feat(langchain_autocommit): [PROJ-123] add logging middleware
+```
+
+To customize any of these, edit the `git` section of `params.yaml` — no code changes needed.
+
+---
+
 ## Installation & Setup
 
 ### 1 Create a virtual environment
@@ -281,6 +301,53 @@ This keeps the project fully **LangChain-native**, using:
 | **Apache / MIT-Only Licenses** | LangChain is MIT; all other libs are stdlib |
 | **No Hardcoded Values** | Paths, model names, thresholds, etc. come from YAML |
 | **CLI Simplicity** | Single entrypoint (`autocommit`) for easy `$PATH` usage |
+
+---
+
+## Testing
+
+Tests use `pytest` with coverage tracking. Run the full suite:
+
+```bash
+python -m pytest
+```
+
+Run a single test file:
+
+```bash
+python -m pytest tests/test_git_utils.py
+```
+
+Run with verbose output and see coverage per file:
+
+```bash
+python -m pytest -v --cov-report=term-missing
+```
+
+Generate an HTML coverage report:
+
+```bash
+python -m pytest --cov-report=html
+open htmlcov/index.html
+```
+
+### Test Structure
+
+| File | What it tests | Dependencies |
+|------|--------------|-------------|
+| `tests/test_git_utils.py` | Type inference, ticket extraction, scope detection, git helpers | Temp git repo fixture |
+| `tests/test_autocommit.py` | `_bool` helper, CLI argument parsing, setup-key flow | Mocked LangChain |
+| `tests/test_master.py` | Config loading structure and keys | `params.yaml` (real file) |
+| `tests/test_keychain.py` | Keychain get/set wrapper | Mocked `keyring` |
+| `tests/test_llm_provider.py` | Primary/fallback provider resolution | Mocked `ChatOpenAI`, `ChatOllama` |
+| `tests/test_commit_chain.py` | Chain construction and `RunnableSequence` output | Mocked LLM |
+
+### Writing Tests
+
+- Pure functions (`infer_type_from_paths`, `find_ticket`, etc.) don't need mocking — just call with test inputs
+- Git operations use the `temp_git_repo` fixture (real temp git repo with one commit)
+- LLM and keychain interactions use `mocker.patch()` (provided by `pytest-mock`)
+- Config files can be tested against the real `params.yaml` via `load_config()`
 
 ---
 
