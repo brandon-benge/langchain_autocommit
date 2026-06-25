@@ -9,9 +9,10 @@ llm:
     temperature: 0.2
     max_tokens: 512
     timeout: 60
-    keychain:
-      service: "langchain_autocommit"
-      key: "opencode_api_key"
+    # keychain:
+    #   service: "langchain_autocommit"
+    #   key: "opencode_api_key"
+    env_var: "OPENCODE_API_KEY"    # Alternative: read API key from env var instead of keychain
 
   fallback:
     base_url: "http://localhost:11434"

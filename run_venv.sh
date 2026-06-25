@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# This script is safe for both local development and GitHub Codespaces.
+# In Codespaces, run it from the workspace root:
+#   /workspaces/langchain_autocommit
+
 # very small YAML key extractor: key: "value" or key: value
 yaml_get () {
   local key="$1"
@@ -25,23 +29,39 @@ yaml_get () {
 PY_VER=$(yaml_get "python_version" "3.10")
 VENV_DIR=$(yaml_get "venv_dir" ".venv")
 
-echo "[run_venv] Using Python ${PY_VER} and venv at ${VENV_DIR}"
+# Codespaces/container path should resolve from the repo root, not from .venv/bin
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${REPO_ROOT}"
+
+echo "[run_venv] Repo root: ${REPO_ROOT}"
+echo "[run_venv] Using Python ${PY_VER} and venv at ${REPO_ROOT}/${VENV_DIR}"
 
 # Prefer pyenv if available; otherwise use system `python3`
 if command -v pyenv >/dev/null 2>&1; then
   PY_BIN="$(pyenv which python || true)"
 else
-  PY_BIN="$(command -v python3)"
+  PY_BIN="$(command -v python3 || true)"
 fi
 
 if [[ -z "${PY_BIN}" ]]; then
-  echo "No python3 found on PATH"; exit 1
+  echo "No python3 found on PATH"
+  exit 1
 fi
 
-$PY_BIN -m venv "${VENV_DIR}"
-source "${VENV_DIR}/bin/activate"
+# In the Codespaces container, the Node image may need python3.13-venv installed first.
+if ! "${PY_BIN}" -m venv --help >/dev/null 2>&1; then
+  echo "[run_venv] python venv support is missing. Attempting to install python3.13-venv..."
+  sudo apt-get update
+  sudo apt-get install -y python3.13-venv
+fi
 
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+# Recreate the venv so the container has a clean, predictable environment.
+rm -rf "${VENV_DIR}"
+"${PY_BIN}" -m venv "${VENV_DIR}"
 
-echo "[run_venv] Environment ready. To activate later: source ${VENV_DIR}/bin/activate"
+"${VENV_DIR}/bin/python" -m pip install --upgrade pip
+"${VENV_DIR}/bin/python" -m pip install -r requirements.txt
+
+echo "[run_venv] Environment ready."
+echo "[run_venv] Python: ${REPO_ROOT}/${VENV_DIR}/bin/python"
+echo "[run_venv] To activate later: source ${REPO_ROOT}/${VENV_DIR}/bin/activate"

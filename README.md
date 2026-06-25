@@ -19,7 +19,7 @@ All configuration logic is downstream in `master.py`.
 | `chains/commit_chain.py` | Defines the LangChain pipeline using `PromptTemplate` + any chat model. |
 | `scripts/git_utils.py` | Lightweight Git wrapper using subprocess (no external SDKs). |
 | `scripts/llm_provider.py` | Resolves the LLM provider with automatic fallback (opencode.ai → Ollama). |
-| `scripts/keychain.py` | macOS Keychain wrapper for secure API key storage. |
+| `scripts/keychain.py` | macOS Keychain wrapper for secure API key storage; env var also supported. |
 | `requirements.txt` | Dependencies (Apache/MIT-licensed). |
 | `run_venv.sh` | Script to bootstrap a Python virtual environment. |
 | `README.md` | You are here. |
@@ -90,6 +90,7 @@ llm:
     keychain:
       service: "langchain_autocommit"
       key: "opencode_api_key"
+    # env_var: "OPENCODE_API_KEY"    # Alternative: read from env var instead of keychain
 
   fallback:
     base_url: "http://localhost:11434"
@@ -118,6 +119,7 @@ git:
 |  | `timeout` | Seconds before triggering fallback |
 |  | `keychain.service` | macOS Keychain service name for API key lookup |
 |  | `keychain.key` | macOS Keychain key name for API key lookup |
+|  | `env_var` | Name of env var to read API key from (alternative to keychain; cannot use both) |
 | **llm.fallback** | `base_url` | Ollama endpoint (default `http://localhost:11434`) |
 |  | `model` | Model name, e.g. `qwen3:8b` |
 |  | `temperature` | Sampling temperature (lower = more deterministic) |
@@ -158,22 +160,34 @@ chmod +x run_venv.sh
 source ../venv/bin/activate
 ```
 
-### 2 Store your API key in the macOS Keychain
+### 2 Provide your API key (choose ONE method)
+
+**Option A: macOS Keychain (recommended on macOS)**
 
 ```bash
 python autocommit.py --setup-key
 ```
 
-You will be prompted for your API key. It is stored securely in the macOS Keychain — never in plaintext files or environment variables.
+You will be prompted for your API key. It is stored securely in the macOS Keychain.
 
-The keychain service name and key name are configurable in `params.yaml`:
+**Option B: Environment variable**
+
+```bash
+export OPENCODE_API_KEY="your-api-key"
+```
+
+Then configure `params.yaml` to use it:
+
 ```yaml
 llm:
   primary:
-    keychain:
-      service: "langchain_autocommit"   # change as needed
-      key: "opencode_api_key"           # change as needed
+    # keychain:                    # <-- commented out or removed
+    #   service: "langchain_autocommit"
+    #   key: "opencode_api_key"
+    env_var: "OPENCODE_API_KEY"    # read key from environment
 ```
+
+> **Important:** Only ONE method may be configured. Setting both `keychain` and `env_var` in `params.yaml` will cause the program to exit with an error.
 
 ### 3 Ensure Ollama is running (fallback)
 
@@ -262,7 +276,8 @@ Thin wrapper around `keyring` for secure API key storage in the macOS Keychain.
 
 ### `scripts/llm_provider.py`
 `resolve_llm(cfg)` resolves the LLM provider:
-- Tries the primary provider (`ChatOpenAI` pointing at `https://opencode.ai/zen/go/v1`).
+- Reads the API key from the macOS Keychain or an environment variable (whichever is configured in `params.yaml`).
+- If both `keychain` and `env_var` are configured, raises a `ValueError`.
 - If the API key is missing, the request fails, times out, or raises any exception, it silently falls back to the local Ollama model.
 - Returns a tuple of `(ChatModel, provider_name)` (`"opencode"` or `"ollama"`).
 
@@ -315,7 +330,7 @@ This keeps the project fully **LangChain-native**, using:
 | Principle | Implementation |
 |------------|----------------|
 | **YAML-Driven Config** | All parameters read from `params.yaml` |
-| **Secure Key Storage** | API key stored in macOS Keychain via `keyring` |
+| **Secure Key Storage** | API key stored in macOS Keychain or read from env var |
 | **Automatic Fallback** | Primary API failure → local Ollama, no config changes needed |
 | **Provider Agnostic** | Chain accepts any LangChain chat model |
 | **Apache / MIT-Only Licenses** | LangChain is MIT; all other libs are stdlib |

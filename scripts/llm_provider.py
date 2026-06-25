@@ -1,3 +1,4 @@
+import os
 from typing import Tuple
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -9,15 +10,31 @@ def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:
     """Build primary LLM or fall back to Ollama. Returns (llm, provider_name)."""
     primary = llm_cfg.get("primary", {})
     fallback = llm_cfg.get("fallback", {})
+    has_keychain = bool(primary.get("keychain"))
+    has_env_var = bool(primary.get("env_var"))
+
+    if has_keychain and has_env_var:
+        raise ValueError(
+            "Cannot configure both 'keychain' and 'env_var' in params.yaml "
+            "under llm.primary. Choose one method for providing the API key."
+        )
 
     try:
-        kc = primary.get("keychain", {})
-        api_key = get_api_key(
-            kc.get("service", "langchain_autocommit"),
-            kc.get("key", "opencode_api_key"),
-        )
-        if not api_key:
-            raise ValueError("No API key found in macOS Keychain")
+        if has_env_var:
+            env_var_name = primary["env_var"]
+            api_key = os.environ.get(env_var_name)
+            if not api_key:
+                raise ValueError(f"Environment variable {env_var_name} is not set")
+        elif has_keychain:
+            kc = primary["keychain"]
+            api_key = get_api_key(
+                kc.get("service", "langchain_autocommit"),
+                kc.get("key", "opencode_api_key"),
+            )
+            if not api_key:
+                raise ValueError("No API key found in macOS Keychain")
+        else:
+            raise ValueError("No API key source configured (keychain or env_var)")
 
         llm = ChatOpenAI(
             model=primary.get("model", "deepseek-v4-flash"),
