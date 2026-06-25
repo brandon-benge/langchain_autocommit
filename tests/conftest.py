@@ -1,7 +1,13 @@
-import os, subprocess, tempfile, shutil
+import os
+import subprocess
+import sys
+import tempfile
+import shutil
 
 import pytest
 import yaml
+
+from autocommit.config import load_config
 
 
 @pytest.fixture

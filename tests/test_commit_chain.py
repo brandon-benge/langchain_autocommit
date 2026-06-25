@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("langchain_core.runnables", reason="LangChain not available")
 
 from langchain_core.runnables import RunnableSequence
-from chains.commit_chain import build_chain
+from autocommit.chains.commit_chain import build_chain
 
 
 class TestBuildChain:

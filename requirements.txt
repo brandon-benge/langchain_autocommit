@@ -5,6 +5,7 @@ langchain>=0.3.7,<0.4.0
 langchain-text-splitters>=0.3.0,<0.4.0
 langchain-ollama>=0.3.10,<0.4.0
 langchain-openai>=0.3.0,<0.4.0
+openai>=1.0.0
 
 # YAML parsing
 pyyaml>=6.0

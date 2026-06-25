@@ -1,140 +1,125 @@
+from unittest.mock import patch
+
 import pytest
 
-pytest.importorskip("langchain_core.language_models", reason="LangChain not available")
-
-from scripts.llm_provider import resolve_llm, build_fallback_llm
+from autocommit.utils.llm_provider import build_fallback_llm, resolve_llm
 
 
-class TestResolveLlm:
-    def test_returns_opencode_when_key_present(self, mocker):
-        mocker.patch("scripts.llm_provider.get_api_key", return_value="sk-test")
-        mock_chat = mocker.patch("scripts.llm_provider.ChatOpenAI")
-        mock_chat.return_value = mocker.MagicMock()
+class TestResolveLLM:
+    def test_primary_provider_with_env_var(self, mocker):
+        mocker.patch.dict("os.environ", {"MY_API_KEY": "sk-test"})
+        mock_chatopenai = mocker.patch("autocommit.utils.llm_provider.ChatOpenAI")
+        mock_instance = mocker.MagicMock()
+        mock_chatopenai.return_value = mock_instance
 
-        llm, provider = resolve_llm({
+        cfg = {
             "primary": {
-                "base_url": "https://opencode.ai/zen/go/v1",
-                "model": "deepseek-v4-flash",
+                "base_url": "https://api.example.com",
+                "model": "test-model",
+                "temperature": 0.1,
+                "max_tokens": 200,
+                "timeout": 30,
+                "env_var": "MY_API_KEY",
+            },
+            "fallback": {"model": "fallback", "base_url": "http://localhost:11434"},
+        }
+
+        llm, name = resolve_llm(cfg)
+        assert name == "opencode"
+        assert llm is mock_instance
+
+    def test_primary_provider_with_keychain(self, mocker):
+        mocker.patch("autocommit.utils.llm_provider.get_api_key", return_value="sk-keychain")
+        mock_chatopenai = mocker.patch("autocommit.utils.llm_provider.ChatOpenAI")
+        mock_instance = mocker.MagicMock()
+        mock_chatopenai.return_value = mock_instance
+
+        cfg = {
+            "primary": {
                 "keychain": {"service": "s", "key": "k"},
             },
-            "fallback": {
-                "base_url": "http://localhost:11434",
-                "model": "qwen3:8b",
-            },
-        })
+            "fallback": {"model": "fallback", "base_url": "http://localhost:11434"},
+        }
 
-        assert provider == "opencode"
+        llm, name = resolve_llm(cfg)
+        assert name == "opencode"
+        assert llm is mock_instance
 
-    def test_falls_back_to_ollama_when_key_missing(self, mocker):
-        mocker.patch("scripts.llm_provider.get_api_key", return_value=None)
-        mock_ollama = mocker.patch("scripts.llm_provider.ChatOllama")
-        mock_ollama.return_value = mocker.MagicMock()
+    def test_fallback_when_no_api_key(self, mocker):
+        mock_chatollama = mocker.patch("autocommit.utils.llm_provider.ChatOllama")
+        mock_instance = mocker.MagicMock()
+        mock_chatollama.return_value = mock_instance
 
-        llm, provider = resolve_llm({
+        cfg = {"primary": {}, "fallback": {"model": "qwen3:8b", "base_url": "http://localhost:11434"}}
+
+        llm, name = resolve_llm(cfg)
+        assert name == "ollama"
+        assert llm is mock_instance
+
+    def test_fallback_when_env_var_missing(self, mocker):
+        mock_chatollama = mocker.patch("autocommit.utils.llm_provider.ChatOllama")
+        mock_instance = mocker.MagicMock()
+        mock_chatollama.return_value = mock_instance
+
+        cfg = {
+            "primary": {"env_var": "MISSING_VAR"},
+            "fallback": {"model": "qwen3:8b", "base_url": "http://localhost:11434"},
+        }
+
+        llm, name = resolve_llm(cfg)
+        assert name == "ollama"
+        assert llm is mock_instance
+
+    def test_error_when_both_keychain_and_env_var(self):
+        cfg = {
             "primary": {
-                "base_url": "https://opencode.ai/zen/go/v1",
-                "model": "deepseek-v4-flash",
                 "keychain": {"service": "s", "key": "k"},
+                "env_var": "SOME_VAR",
             },
-            "fallback": {
-                "base_url": "http://localhost:11434",
-                "model": "qwen3:8b",
-            },
-        })
+            "fallback": {},
+        }
 
-        assert provider == "ollama"
-
-    def test_falls_back_when_chatopenai_raises(self, mocker):
-        mocker.patch("scripts.llm_provider.get_api_key", return_value="sk-test")
-        mocker.patch("scripts.llm_provider.ChatOpenAI", side_effect=Exception("API error"))
-        mock_ollama = mocker.patch("scripts.llm_provider.ChatOllama")
-        mock_ollama.return_value = mocker.MagicMock()
-
-        llm, provider = resolve_llm({
-            "primary": {
-                "base_url": "https://opencode.ai/zen/go/v1",
-                "model": "deepseek-v4-flash",
-                "keychain": {"service": "s", "key": "k"},
-            },
-            "fallback": {
-                "base_url": "http://localhost:11434",
-                "model": "qwen3:8b",
-            },
-        })
-
-        assert provider == "ollama"
-
-    def test_env_var_provides_key(self, mocker, monkeypatch):
-        monkeypatch.setenv("OPENCODE_API_KEY", "sk-test")
-        mock_chat = mocker.patch("scripts.llm_provider.ChatOpenAI")
-        mock_chat.return_value = mocker.MagicMock()
-
-        llm, provider = resolve_llm({
-            "primary": {
-                "base_url": "https://opencode.ai/zen/go/v1",
-                "model": "deepseek-v4-flash",
-                "env_var": "OPENCODE_API_KEY",
-            },
-            "fallback": {
-                "base_url": "http://localhost:11434",
-                "model": "qwen3:8b",
-            },
-        })
-
-        assert provider == "opencode"
-
-    def test_env_var_missing_falls_back(self, mocker, monkeypatch):
-        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
-        mock_ollama = mocker.patch("scripts.llm_provider.ChatOllama")
-        mock_ollama.return_value = mocker.MagicMock()
-
-        llm, provider = resolve_llm({
-            "primary": {
-                "base_url": "https://opencode.ai/zen/go/v1",
-                "model": "deepseek-v4-flash",
-                "env_var": "OPENCODE_API_KEY",
-            },
-            "fallback": {
-                "base_url": "http://localhost:11434",
-                "model": "qwen3:8b",
-            },
-        })
-
-        assert provider == "ollama"
-
-    def test_both_keychain_and_env_var_raises(self, mocker):
         with pytest.raises(ValueError, match="Cannot configure both"):
-            resolve_llm({
-                "primary": {
-                    "keychain": {"service": "s", "key": "k"},
-                    "env_var": "OPENCODE_API_KEY",
-                },
-                "fallback": {
-                    "base_url": "http://localhost:11434",
-                    "model": "qwen3:8b",
-                },
-            })
+            resolve_llm(cfg)
 
-    def test_uses_defaults_when_config_sparse(self, mocker):
-        mocker.patch("scripts.llm_provider.get_api_key", return_value=None)
-        mock_ollama = mocker.patch("scripts.llm_provider.ChatOllama")
-        mock_ollama.return_value = mocker.MagicMock()
+    def test_primary_uses_defaults_when_fields_missing(self, mocker):
+        mocker.patch.dict("os.environ", {"MY_API_KEY": "sk-test"})
+        mock_chatopenai = mocker.patch("autocommit.utils.llm_provider.ChatOpenAI")
+        mock_instance = mocker.MagicMock()
+        mock_chatopenai.return_value = mock_instance
 
-        llm, provider = resolve_llm({})
+        cfg = {
+            "primary": {"env_var": "MY_API_KEY"},
+            "fallback": {},
+        }
 
-        assert provider == "ollama"
+        llm, name = resolve_llm(cfg)
+        assert name == "opencode"
+        call_kwargs = mock_chatopenai.call_args.kwargs
+        assert call_kwargs["model"] == "deepseek-v4-flash"
+        assert call_kwargs["base_url"] == "https://opencode.ai/zen/go/v1"
 
 
-class TestBuildFallbackLlm:
-    def test_builds_ollama(self, mocker):
-        mock_ollama = mocker.patch("scripts.llm_provider.ChatOllama")
-        mock_ollama.return_value = mocker.MagicMock()
+class TestBuildFallbackLLM:
+    def test_builds_ollama_with_fallback_config(self, mocker):
+        mock_chatollama = mocker.patch("autocommit.utils.llm_provider.ChatOllama")
+        mock_instance = mocker.MagicMock()
+        mock_chatollama.return_value = mock_instance
 
-        result = build_fallback_llm({
+        cfg = {
             "fallback": {
-                "base_url": "http://localhost:11434",
-                "model": "qwen3:8b",
+                "base_url": "http://custom:11434",
+                "model": "custom-model",
+                "temperature": 0.5,
+                "max_tokens": 1000,
             }
-        })
+        }
 
-        mock_ollama.assert_called_once()
+        llm = build_fallback_llm(cfg)
+        assert llm is mock_instance
+        mock_chatollama.assert_called_once_with(
+            base_url="http://custom:11434",
+            model="custom-model",
+            temperature=0.5,
+            num_predict=1000,
+        )

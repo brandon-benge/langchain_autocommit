@@ -1,85 +1,182 @@
 
 # LangChain AutoCommit v2
 
-**LangChain AutoCommit** is an **agentic Git automation tool** with automatic API fallback.  
-It reads configuration from a `params.yaml` file, uses the **opencode.ai API** as the primary LLM (serving models like DeepSeek, Qwen, Kimi), and falls back to a **local Ollama model** if the API is unavailable. It generates **conventional commit messages** based on the current Git diff.
+**LangChain AutoCommit** is an **agentic Git automation** library with automatic API fallback.  
+It reads configuration from a bundled `params.yaml` file, uses the **opencode.ai API** as the primary LLM (serving models like DeepSeek, Qwen, Kimi), and falls back to a **local Ollama model** if the API is unavailable. It generates **conventional commit messages** based on the current Git diff.
 
-This version (v2) makes **`autocommit.py`** the **only CLI entrypoint**.  
-All configuration logic is downstream in `master.py`.
+New in v2: installable **Python library** with a clean programmatic API, deep-merge config overrides, and an optional CLI.
 
 ---
 
-## Project Structure
+## Package Structure
 
 | Path | Description |
 |------|--------------|
-| `autocommit.py` | Main CLI entrypoint — runs LangChain commit chain and handles Git logic. |
-| `master.py` | Utility module that loads and parses `params.yaml`. |
-| `params.yaml` | Central config file (no hardcoded variables anywhere). |
-| `chains/commit_chain.py` | Defines the LangChain pipeline using `PromptTemplate` + any chat model. |
-| `scripts/git_utils.py` | Lightweight Git wrapper using subprocess (no external SDKs). |
-| `scripts/llm_provider.py` | Resolves the LLM provider with automatic fallback (opencode.ai → Ollama). |
-| `scripts/keychain.py` | macOS Keychain wrapper for secure API key storage; env var also supported. |
-| `requirements.txt` | Dependencies (Apache/MIT-licensed). |
-| `run_venv.sh` | Script to bootstrap a Python virtual environment. |
-| `README.md` | You are here. |
+| `autocommit/__init__.py` | Public API: `generate_commit_message`, `apply_commit`, `generate_and_commit`, `CommitMessage`, `load_config`, `deep_merge` |
+| `autocommit/core.py` | Core library — commit message generation and application |
+| `autocommit/config.py` | Config loader with deep-merge override support |
+| `autocommit/cli.py` | Optional CLI entrypoint |
+| `autocommit/chains/commit_chain.py` | LangChain pipeline using `PromptTemplate` + chat model |
+| `autocommit/utils/git_utils.py` | Lightweight Git wrapper using subprocess |
+| `autocommit/utils/llm_provider.py` | LLM provider resolution with automatic fallback |
+| `autocommit/utils/keychain.py` | macOS Keychain wrapper; env var also supported |
+| `autocommit/params.yaml` | Bundled default configuration |
+| `pyproject.toml` | Package metadata and dependencies |
+| `tests/` | pytest suite (54 tests) |
 
 ---
 
-## How It Works
+## Library Usage
 
-```mermaid
-flowchart TD
-    A["User CLI - autocommit.py"] --> B["load_config() from master.py"]
-    B --> C["Parse params.yaml → config dict"]
-    C --> D["scripts.llm_provider.resolve_llm()"]
-    D --> E{"opencode.ai API"}
-    E -->|"success"| F["ChatOpenAI generates commit"]
-    E -->|"any failure"| G["Fallback: ChatOllama (local)"]
-    F --> H["scripts.git_utils: git commit/push"]
-    G --> H
-    H --> I["Repository updated"]
+### Install
+
+```bash
+pip install git+https://github.com/your-org/langchain-autocommit.git
 ```
 
-### Control Flow Summary
+Or from a specific branch/tag:
 
-1. **User runs**  
-   ```bash
-   python autocommit.py --autostage
-   ```
+```bash
+pip install git+https://github.com/your-org/langchain-autocommit.git@v2.0.0
+```
 
-2. **autocommit.py**
-   - Imports `load_config()` from `master.py`.
-   - Reads `params.yaml` into a Python dictionary.
-   - Determines what files changed, which branch is active, etc.
-   - Calls `resolve_llm()` to select a provider (opencode.ai → Ollama fallback).
-   - Builds a LangChain pipeline with the resolved LLM.
+### Quick Start
 
-3. **The LLM (deepseek-v4-flash via opencode.ai, falling back to qwen3:8b locally)**
-   - Takes Git diff summary + context.
-   - Generates a structured JSON object:
-     ```json
-     {
-       "subject": "feat(core): add logging middleware",
-       "body": "Adds request logging for all API calls to help debugging."
-     }
-     ```
+```python
+from autocommit import generate_commit_message, apply_commit
 
-4. **autocommit.py applies the result**
-   - Prompts for confirmation (unless `-y` is passed).
-   - Runs `git commit -m <subject> -m <body>`.
-   - Optionally pushes to remote if configured in `params.yaml`.
+# Generate a commit message from staged changes
+msg = generate_commit_message()
+print(msg.subject)
+print(msg.body)
+
+# Apply it
+apply_commit(msg)
+```
+
+### One-liner
+
+```python
+from autocommit import generate_and_commit
+
+msg = generate_and_commit()
+```
+
+### With Overrides
+
+All overrides are keyword arguments. The bundled `params.yaml` provides defaults for any value you don't supply.
+
+```python
+from autocommit import generate_and_commit
+
+msg = generate_and_commit(
+    type="feat",
+    scope="api",
+    ticket="PROJ-123",
+    context="Added rate limiting middleware",
+    committer="Jane Doe",
+    config_overrides={"git": {"max_subject_length": 120}},
+)
+```
+
+### Config Overrides
+
+The bundled `autocommit/params.yaml` is the default baseline. You can override any part of it with a dict that gets deep-merged:
+
+```python
+from autocommit import load_config, generate_commit_message
+
+cfg = load_config(overrides={
+    "llm": {
+        "primary": {"model": "deepseek-v4-pro"},
+    },
+    "git": {
+        "autostage_all": False,
+        "push_after_commit": False,
+    },
+})
+
+msg = generate_commit_message(config=cfg)
+```
+
+Or pass `config_overrides` directly to the convenience functions:
+
+```python
+msg = generate_commit_message(
+    config_overrides={"llm": {"primary": {"timeout": 120}}}
+)
+```
+
+### Full `generate_commit_message()` Signature
+
+```python
+def generate_commit_message(
+    *,
+    config: dict | None = None,
+    config_overrides: dict | None = None,
+    type: str | None = None,
+    scope: str | None = None,
+    ticket: str | None = None,
+    context: str = "",
+    committer: str = "",
+    max_subject_length: int | None = None,
+    cwd: str | None = None,
+    autostage: bool | None = None,
+    conventional: bool | None = None,
+    dry_run: bool = False,
+) -> CommitMessage
+```
+
+- `CommitMessage` is a `NamedTuple` with `.subject` and `.body` fields.
+- When `None`, each parameter falls back to the merged config (params.yaml + overrides).
+- Returns an empty `CommitMessage` (both fields `""`) when there are no changes.
+
+### Full `apply_commit()` Signature
+
+```python
+def apply_commit(
+    message: CommitMessage,
+    *,
+    cwd: str | None = None,
+    signoff: bool = False,
+    amend: bool = False,
+    push_after: bool = False,
+) -> None
+```
+
+### Full `generate_and_commit()` Signature
+
+```python
+def generate_and_commit(
+    *,
+    config: dict | None = None,
+    config_overrides: dict | None = None,
+    type: str | None = None,
+    scope: str | None = None,
+    ticket: str | None = None,
+    context: str = "",
+    committer: str = "",
+    max_subject_length: int | None = None,
+    cwd: str | None = None,
+    autostage: bool | None = None,
+    conventional: bool | None = None,
+    signoff: bool | None = None,
+    amend: bool | None = None,
+    push_after: bool | None = None,
+) -> CommitMessage
+```
 
 ---
 
 ## Configuration: `params.yaml`
 
-All runtime values are read from here.  
-No constants are hardcoded in the codebase.
-
-### Example
+Bundled with the package. All runtime defaults live here.
 
 ```yaml
+project_name: "LangChain AutoCommit"
+python_version: "3.10"
+venv_dir: "../venv"
+
 llm:
   primary:
     base_url: "https://opencode.ai/zen/go/v1"
@@ -87,10 +184,10 @@ llm:
     temperature: 0.2
     max_tokens: 512
     timeout: 60
-    keychain:
-      service: "langchain_autocommit"
-      key: "opencode_api_key"
-    # env_var: "OPENCODE_API_KEY"    # Alternative: read from env var instead of keychain
+    # keychain:
+    #   service: "langchain_autocommit"
+    #   key: "opencode_api_key"
+    env_var: "OPENCODE_API_KEY"
 
   fallback:
     base_url: "http://localhost:11434"
@@ -99,15 +196,19 @@ llm:
     max_tokens: 4096
 
 git:
-  autostage_all: false
-  signoff: false
-  push_after_commit: false
+  autostage_all: true
+  signoff: true
+  push_after_commit: true
   allow_amend: false
   conventional: true
   default_type: "chore"
   scope_from_folder: true
-  max_subject_length: 72
-  ticket_regex: "[A-Z]{2,}-\\d+"
+  max_subject_length: 100
+  ticket_regex: '[A-Z]{2,}-\d+'
+
+paths:
+  logs_dir: "logs"
+  temp_dir: "tmp"
 ```
 
 ### Notable Fields
@@ -132,196 +233,119 @@ git:
 
 ## How Type, Scope, and Ticket Are Resolved
 
-You don't need to pass any flags — these values are inferred automatically from your repository state:
+You don't need to pass any overrides — these values are inferred automatically from your repository state:
 
 | Value | Source | Default | Example |
 |-------|--------|---------|---------|
-| **type** | File path heuristics: `tests/` or `*_test.py` → `test`, `docs/` or `*.md` → `docs`, `scripts/` or `*.sh` → `chore`, everything else → `feat` | `git.default_type` in `params.yaml` (`"chore"`) | `feat`, `docs`, `test` |
+| **type** | File path heuristics: `tests/` or `*_test.py` → `test`, `docs/` or `*.md` → `docs`, `scripts/` or `*.sh` → `chore`, everything else → `feat` | `git.default_type` (`"chore"`) | `feat`, `docs`, `test` |
 | **scope** | Basename of the current working directory (the repo folder name) | `git.scope_from_folder: true` | `langchain_autocommit` |
-| **ticket** | Regex match against the current git branch name | `git.ticket_regex` in `params.yaml` (`[A-Z]{2,}-\d+`) | `PROJ-123` from branch `feat/PROJ-123-add-auth` |
+| **ticket** | Regex match against the current git branch name | `git.ticket_regex` (`[A-Z]{2,}-\d+`) | `PROJ-123` from branch `feat/PROJ-123-add-auth` |
 
-These are assembled into an `inputs` dict and passed to the LLM prompt as template variables (`{type}`, `{scope}`, `{ticket}`). The LLM then generates a commit message like:
-
-```
-feat(langchain_autocommit): [PROJ-123] add logging middleware
-```
-
-To customize any of these, edit the `git` section of `params.yaml` — no code changes needed.
+To customize any of these, pass overrides in your code or edit the `params.yaml` bundled with the package.
 
 ---
 
-## Installation & Setup
+## How It Works
 
-### 1 Create a virtual environment
-
-```bash
-chmod +x run_venv.sh
-./run_venv.sh
-source ../venv/bin/activate
+```mermaid
+flowchart TD
+    A["User API - generate_commit_message()"] --> B["load_config() with overrides"]
+    B --> C["Deep-merge params.yaml + overrides"]
+    C --> D["resolve_llm()"]
+    D --> E{"opencode.ai API"}
+    E -->|"success"| F["ChatOpenAI generates commit"]
+    E -->|"any failure"| G["Fallback: ChatOllama (local)"]
+    F --> H["CommitMessage returned"]
+    G --> H
+    H --> I["apply_commit() → git commit/push"]
 ```
 
-### 2 Provide your API key (choose ONE method)
+---
 
-**Option A: macOS Keychain (recommended on macOS)**
+## API Key Setup
 
-```bash
-python autocommit.py --setup-key
-```
-
-You will be prompted for your API key. It is stored securely in the macOS Keychain.
-
-**Option B: Environment variable**
+### Option A: Environment variable (recommended for cloud/CI)
 
 ```bash
 export OPENCODE_API_KEY="your-api-key"
 ```
 
-Then configure `params.yaml` to use it:
+The bundled `params.yaml` uses `env_var: "OPENCODE_API_KEY"` by default — no changes needed.
 
-```yaml
-llm:
-  primary:
-    # keychain:                    # <-- commented out or removed
-    #   service: "langchain_autocommit"
-    #   key: "opencode_api_key"
-    env_var: "OPENCODE_API_KEY"    # read key from environment
-```
-
-> **Important:** Only ONE method may be configured. Setting both `keychain` and `env_var` in `params.yaml` will cause the program to exit with an error.
-
-### 3 Ensure Ollama is running (fallback)
-
-Ollama is only used if the primary API is unreachable. To enable fallback:
+### Option B: macOS Keychain (CLI only)
 
 ```bash
-ollama serve &
-ollama pull qwen3:8b
+autocommit --setup-key
 ```
 
-### 4 Run from any Git repo
+Then uncomment the `keychain` block in `params.yaml` and comment out `env_var`.
+
+> **Important:** Only ONE method may be configured. Setting both `keychain` and `env_var` causes an error.
+
+---
+
+## CLI Usage (Optional)
+
+The CLI is available as a secondary entry point:
 
 ```bash
-python /path/to/autocommit.py --autostage
-```
-
-or symlink for global usage:
-
-```bash
-chmod +x autocommit.py
-sudo ln -s "$(pwd)/autocommit.py" /usr/local/bin/autocommit
+pip install git+https://github.com/your-org/langchain-autocommit.git
 autocommit --autostage
 ```
 
-### Available CLI Flags
+### CLI Flags
 
-#### User Input
 | Flag | Description |
 |------|-------------|
-| `-c, --context TEXT` | Optional context describing what you changed and why |
-| `-n, --committer TEXT` | Committer name to include in the commit body |
-
-#### Override Flags (CLI wins over `params.yaml`)
-| Flag | Description | Overrides |
-|------|-------------|-----------|
-| `-t, --type TYPE` | Override commit type (`feat`, `fix`, `docs`, `test`, `chore`) | `git.default_type` + file inference |
-| `-s, --scope SCOPE` | Override commit scope (e.g. `auth`, `api`, `ui`) | `git.scope_from_folder` |
-| `--ticket TICKET` | Override ticket ID | `git.ticket_regex` extraction |
-| `--max-subject-length N` | Override max subject line length | `git.max_subject_length` |
-| `--autostage` / `--no-autostage` | Enable/disable auto-staging all files | `git.autostage_all` |
-| `--amend` / `--no-amend` | Enable/disable amending previous commit | `git.allow_amend` |
-| `--push` / `--no-push` | Enable/disable auto-push after commit | `git.push_after_commit` |
-| `--signoff` / `--no-signoff` | Enable/disable Signed-off-by trailer | `git.signoff` |
-| `--conventional` / `--no-conventional` | Enable/disable conventional commit format | `git.conventional` |
-
-#### Action Flags
-| Flag | Description |
-|------|-------------|
-| `--dry-run` | Show proposed commit without applying it |
+| `-c, --context TEXT` | Optional context describing what changed and why |
+| `-n, --committer TEXT` | Committer name to include in commit body |
+| `-t, --type TYPE` | Override commit type |
+| `-s, --scope SCOPE` | Override commit scope |
+| `--ticket TICKET` | Override ticket ID |
+| `--max-subject-length N` | Override max subject length |
+| `--autostage` / `--no-autostage` | Enable/disable auto-staging |
+| `--amend` / `--no-amend` | Enable/disable amending |
+| `--push` / `--no-push` | Enable/disable push after commit |
+| `--signoff` / `--no-signoff` | Enable/disable Signed-off-by |
+| `--conventional` / `--no-conventional` | Enable/disable conventional format |
+| `--dry-run` | Show proposed commit without applying |
 | `-y, --yes` | Skip confirmation prompt |
-| `--show-config` | (debug) Show parsed YAML config |
-| `--setup-key` | Store API key in macOS Keychain (prompts for key) |
-
-All boolean flags (`--autostage`, `--amend`, `--push`, `--signoff`, `--conventional`) support `--flag` to enable and `--no-flag` to disable. When omitted, the value from `params.yaml` is used.
+| `--show-config` | Print parsed config and exit |
+| `--setup-key` | Store API key in macOS Keychain |
 
 ---
 
-## Example Interaction
+## Testing
 
 ```bash
-$ autocommit --autostage
-
-  Using provider: opencode
-
---- Proposed Commit ---
-feat(auth): add token refresh support
-
-Implements auto-refresh when a 401 occurs to improve user experience.
-Tokens now refresh transparently and retry the failed call.
-
------------------------
-
-Proceed with commit? [y/N]: y
-Committed.
+python -m pytest
 ```
 
----
+With coverage:
 
-## Internals
-
-### `master.py`
-Reads `params.yaml` and exports `load_config()` to downstream scripts.
-
-### `scripts/keychain.py`
-Thin wrapper around `keyring` for secure API key storage in the macOS Keychain.
-
-### `scripts/llm_provider.py`
-`resolve_llm(cfg)` resolves the LLM provider:
-- Reads the API key from the macOS Keychain or an environment variable (whichever is configured in `params.yaml`).
-- If both `keychain` and `env_var` are configured, raises a `ValueError`.
-- If the API key is missing, the request fails, times out, or raises any exception, it silently falls back to the local Ollama model.
-- Returns a tuple of `(ChatModel, provider_name)` (`"opencode"` or `"ollama"`).
-
-### `autocommit.py`
-- Imports `load_config()`, `resolve_llm()`, and other helpers.
-- Orchestrates Git diff collection, provider resolution, and LLM invocation.
-- Commits changes using results from the chain.
-
-### `chains/commit_chain.py`
-- Defines a `PromptTemplate` describing conventional commit rules.
-- Accepts any LangChain chat model (`ChatOpenAI` or `ChatOllama`).
-- Returns LLM output as a JSON object.
-
-### `scripts/git_utils.py`
-- Runs shell-based Git commands.
-- Provides helper functions:
-  - `changed_files()`
-  - `current_branch()`
-  - `commit()`
-  - `push()`
-  - `infer_type_from_paths()`
+```bash
+python -m pytest --cov-report=term-missing
+```
 
 ---
 
 ## LangChain Design Pattern
 
-The chain in `chains/commit_chain.py` is deliberately simple and provider-agnostic:
+The chain in `autocommit/chains/commit_chain.py` is provider-agnostic:
 
 ```python
 chain = (
     RunnableMap({
         "type": lambda x: x.get("type"),
         "scope": lambda x: x.get("scope"),
-        "diff_summary": lambda x: x.get("diff_summary")[:4000],
+        ...
     })
     | PromptTemplate.from_template(COMMIT_PROMPT)
     | llm  # Any LangChain chat model
 )
 ```
 
-This keeps the project fully **LangChain-native**, using:
-- `RunnableMap` for variable injection,
-- `PromptTemplate` for input templating,
-- A configurable LLM resolved at runtime by `scripts/llm_provider.py`.
+This keeps the project fully **LangChain-native**, using `RunnableMap` for variable injection, `PromptTemplate` for input templating, and a configurable LLM resolved at runtime.
 
 ---
 
@@ -329,73 +353,12 @@ This keeps the project fully **LangChain-native**, using:
 
 | Principle | Implementation |
 |------------|----------------|
-| **YAML-Driven Config** | All parameters read from `params.yaml` |
-| **Secure Key Storage** | API key stored in macOS Keychain or read from env var |
-| **Automatic Fallback** | Primary API failure → local Ollama, no config changes needed |
+| **YAML-Driven Config** | All parameters read from bundled `params.yaml` |
+| **Deep-Merge Overrides** | Programmatic config overrides merge recursively |
+| **Secure Key Storage** | API key from env var or macOS Keychain |
+| **Automatic Fallback** | Primary API failure → local Ollama |
 | **Provider Agnostic** | Chain accepts any LangChain chat model |
-| **Apache / MIT-Only Licenses** | LangChain is MIT; all other libs are stdlib |
-| **No Hardcoded Values** | Paths, model names, thresholds, etc. come from YAML |
-| **CLI Simplicity** | Single entrypoint (`autocommit`) for easy `$PATH` usage |
-
----
-
-## Testing
-
-Tests use `pytest` with coverage tracking. Run the full suite:
-
-```bash
-python -m pytest
-```
-
-Run a single test file:
-
-```bash
-python -m pytest tests/test_git_utils.py
-```
-
-Run with verbose output and see coverage per file:
-
-```bash
-python -m pytest -v --cov-report=term-missing
-```
-
-Generate an HTML coverage report:
-
-```bash
-python -m pytest --cov-report=html
-open htmlcov/index.html
-```
-
-### Test Structure
-
-| File | What it tests | Dependencies |
-|------|--------------|-------------|
-| `tests/test_git_utils.py` | Type inference, ticket extraction, scope detection, git helpers | Temp git repo fixture |
-| `tests/test_autocommit.py` | `_bool` helper, CLI argument parsing, setup-key flow | Mocked LangChain |
-| `tests/test_master.py` | Config loading structure and keys | `params.yaml` (real file) |
-| `tests/test_keychain.py` | Keychain get/set wrapper | Mocked `keyring` |
-| `tests/test_llm_provider.py` | Primary/fallback provider resolution | Mocked `ChatOpenAI`, `ChatOllama` |
-| `tests/test_commit_chain.py` | Chain construction and `RunnableSequence` output | Mocked LLM |
-
-### Writing Tests
-
-- Pure functions (`infer_type_from_paths`, `find_ticket`, etc.) don't need mocking — just call with test inputs
-- Git operations use the `temp_git_repo` fixture (real temp git repo with one commit)
-- LLM and keychain interactions use `mocker.patch()` (provided by `pytest-mock`)
-- Config files can be tested against the real `params.yaml` via `load_config()`
-
----
-
-## Extending the System
-
-This architecture is modular and supports additional chains easily.
-
-| Feature | New File | Description |
-|----------|-----------|-------------|
-| **Generate changelog** | `chains/changelog_chain.py` | Summarize multiple commits. |
-| **Summarize code diffs** | `chains/diff_summary_chain.py` | LLM-based diff-to-summary chain. |
-| **Classify commit types** | `chains/commit_classifier.py` | Detect if a change is `feat`, `fix`, etc. |
-| **Multi-tool agent** | `agent.py` | Combine `autocommit`, `changelog`, etc. with routing logic. |
+| **Library-First** | Clean Python API as the primary interface |
 
 ---
 
@@ -405,15 +368,5 @@ This architecture is modular and supports additional chains easily.
 - Dependencies:
   - **LangChain** – MIT
   - **keyring** – MIT
-  - **Ollama** – Apache 2.0 (for Granite, Mistral models)
+  - **Ollama** – Apache 2.0
   - **Python stdlib** – PSF License
-
----
-
-**In short:**  
-You can now type `autocommit` from *any Git repo*, and it will:
-1. Read your YAML config,
-2. Analyze your diff,
-3. Try to generate a conventional commit via the opencode.ai API,
-4. Fall back to a local Ollama model if the API is unavailable,
-5. Apply the commit — securely and automatically.

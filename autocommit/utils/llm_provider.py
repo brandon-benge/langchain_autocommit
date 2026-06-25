@@ -3,7 +3,7 @@ from typing import Tuple
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
-from scripts.keychain import get_api_key
+from autocommit.utils.keychain import get_api_key
 
 
 def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:

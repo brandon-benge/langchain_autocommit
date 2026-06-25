@@ -61,7 +61,7 @@ def infer_type_from_paths(paths: List[str]) -> str:
     """
     Heuristic: test/ docs/ build/ chore.
     """
-    if all(p.startswith("tests/") or p.endswith("_test.py") for p in paths if paths):
+    if paths and all(p.startswith("tests/") or p.endswith("_test.py") for p in paths):
         return "test"
     if any(p.startswith("docs/") or p.endswith(".md") for p in paths):
         return "docs"

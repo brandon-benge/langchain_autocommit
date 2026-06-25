@@ -61,7 +61,9 @@ rm -rf "${VENV_DIR}"
 
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip
 "${VENV_DIR}/bin/python" -m pip install -r requirements.txt
+"${VENV_DIR}/bin/python" -m pip install -e "${REPO_ROOT}"
 
 echo "[run_venv] Environment ready."
 echo "[run_venv] Python: ${REPO_ROOT}/${VENV_DIR}/bin/python"
+echo "[run_venv] CLI: ${REPO_ROOT}/${VENV_DIR}/bin/autocommit"
 echo "[run_venv] To activate later: source ${REPO_ROOT}/${VENV_DIR}/bin/activate"

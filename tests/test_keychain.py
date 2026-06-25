@@ -1,25 +1,23 @@
-from scripts.keychain import get_api_key, set_api_key
+from unittest.mock import patch
+
+from autocommit.utils.keychain import get_api_key, set_api_key
 
 
 class TestGetApiKey:
-    def test_returns_password(self, mocker):
-        mocker.patch("keyring.get_password", return_value="sk-test-key")
-        result = get_api_key("myservice", "mykey")
-        assert result == "sk-test-key"
+    def test_returns_value_from_keyring(self, mocker):
+        mock_get = mocker.patch("keyring.get_password", return_value="sk-abc123")
+        result = get_api_key("my_service", "my_key")
+        mock_get.assert_called_once_with("my_service", "my_key")
+        assert result == "sk-abc123"
 
-    def test_returns_none_when_missing(self, mocker):
+    def test_returns_none_when_keyring_returns_none(self, mocker):
         mocker.patch("keyring.get_password", return_value=None)
-        result = get_api_key("myservice", "mykey")
+        result = get_api_key("svc", "key")
         assert result is None
-
-    def test_passes_correct_args(self, mocker):
-        mock = mocker.patch("keyring.get_password", return_value="k")
-        get_api_key("langchain_autocommit", "opencode_api_key")
-        mock.assert_called_once_with("langchain_autocommit", "opencode_api_key")
 
 
 class TestSetApiKey:
-    def test_stores_password(self, mocker):
-        mock = mocker.patch("keyring.set_password")
-        set_api_key("myservice", "mykey", "sk-new-key")
-        mock.assert_called_once_with("myservice", "mykey", "sk-new-key")
+    def test_stores_value_in_keyring(self, mocker):
+        mock_set = mocker.patch("keyring.set_password")
+        set_api_key("my_service", "my_key", "sk-secret")
+        mock_set.assert_called_once_with("my_service", "my_key", "sk-secret")

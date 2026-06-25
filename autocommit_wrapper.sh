@@ -7,5 +7,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Activate the virtual environment
 source "$SCRIPT_DIR/../venv/bin/activate"
 
-# Run the autocommit Python script with all passed arguments
-python3 "$SCRIPT_DIR/autocommit.py" "$@"
+# Run the autocommit CLI via the package module
+python3 -m autocommit.cli "$@"
