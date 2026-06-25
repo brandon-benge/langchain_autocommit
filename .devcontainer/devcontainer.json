@@ -1,9 +1,10 @@
 {
-  "name": "OpenCode",
+  "name": "LangChain AutoCommit",
+
   "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
 
   "remoteEnv": {
-    "OPENCODE_GO_API_KEY": "${localEnv:OPENCODE_GO_API_KEY}"
+    "OPENCODE_GO_API_KEY": "${localEnv:OPENCODE_API_KEY}"
   },
 
   "customizations": {
@@ -11,17 +12,31 @@
       "extensions": [
         "opencode-ai.opencode",
         "ms-python.python",
+        "ms-python.debugpy",
         "ms-azuretools.vscode-docker",
         "eamodio.gitlens"
       ],
       "settings": {
         "editor.formatOnSave": true,
+
         "terminal.integrated.defaultProfile.linux": "bash",
+
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+
         "workbench.secondarySideBar.defaultVisibility": "hidden",
-        "chat.commandCenter.enabled": false
+        "workbench.panel.defaultLocation": "bottom",
+
+        "chat.commandCenter.enabled": false,
+        "chat.openOnStart": false
       }
     }
   },
 
-  "postCreateCommand": "npm install -g opencode-ai && git status"
+  "postCreateCommand": [
+    "python -m venv .venv",
+    ". .venv/bin/activate && pip install --upgrade pip",
+    ". .venv/bin/activate && pip install -r requirements.txt",
+    "npm install -g opencode-ai",
+    "git status"
+  ]
 }
