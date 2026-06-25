@@ -322,3 +322,13 @@ class TestCliArgs:
             result = main()
             assert result == 0
             assert mock_gen.call_args.kwargs["max_subject_length"] == 10
+
+    def test_no_changes_exits_with_message(self, mocker):
+        mocker.patch("autocommit.cli.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.cli.generate_commit_message",
+                     return_value=MagicMock(subject="", body=""))
+
+        with patch.object(sys, "argv", ["autocommit"]):
+            from autocommit.cli import main
+            result = main()
+            assert result == 0

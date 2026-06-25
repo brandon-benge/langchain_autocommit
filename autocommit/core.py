@@ -1,8 +1,7 @@
-import json
 import os
 from typing import NamedTuple
 
-from autocommit.config import DEFAULT_CONFIG, load_config
+from autocommit.config import load_config
 from autocommit.chains.commit_chain import build_chain
 from autocommit.utils.llm_provider import build_fallback_llm, resolve_llm
 from autocommit.utils.git_utils import (
@@ -31,6 +30,16 @@ def _bool(v, default=False):
         return default
     s = str(v).strip().lower()
     return s in {"1", "true", "t", "yes", "y"}
+
+
+def _build_fallback_body(files: list, type: str, scope: str) -> tuple:
+    subject = f"{type}{f'({scope})' if scope else ''}: update"
+    lines = [f"Changes made to {len(files)} file(s):"]
+    for f in files[:10]:
+        lines.append(f"- {f}")
+    if len(files) > 10:
+        lines.append(f"- ...and {len(files) - 10} more")
+    return subject, "\n".join(lines)
 
 
 def generate_commit_message(
@@ -65,6 +74,10 @@ def generate_commit_message(
     if max_subject_length is None:
         max_subject_length = int(git_cfg.get("max_subject_length", 72))
 
+    max_diff_chars = int(git_cfg.get("max_diff_chars", 8000))
+    max_changed_files = int(git_cfg.get("max_changed_files", 20))
+    include_diff_patch = _bool(git_cfg.get("include_diff_patch", True))
+
     ensure_git_repo(cwd)
 
     if autostage is None:
@@ -73,7 +86,7 @@ def generate_commit_message(
         autostage_all(cwd)
 
     files = changed_files(cwd)
-    diff = staged_diff_summary(cwd)
+    diff = staged_diff_summary(cwd, include_patch=include_diff_patch)
 
     if not files:
         return CommitMessage("", "")
@@ -107,6 +120,11 @@ def generate_commit_message(
         if pattern:
             ticket = find_ticket(branch, pattern) or ""
 
+    _diff_truncated = max_diff_chars > 0 and len(diff) > max_diff_chars
+
+    if _diff_truncated:
+        diff = diff[:max_diff_chars]
+
     llm_model, provider_used = resolve_llm(llm_cfg)
     chain = build_chain(llm_model)
 
@@ -117,30 +135,29 @@ def generate_commit_message(
         changed_files=files,
         diff_summary=diff,
         max_subject_length=max_subject_length,
+        max_diff_chars=max_diff_chars,
+        max_changed_files=max_changed_files,
+        _diff_truncated=_diff_truncated,
         user_context=context or "",
     )
 
-    raw = None
+    payload = None
     try:
-        raw = chain.invoke(inputs)
-    except Exception as e:
+        payload = chain.invoke(inputs)
+    except Exception:
         if provider_used == "opencode":
             fb_llm = build_fallback_llm(llm_cfg)
-            chain = build_chain(fb_llm)
-            raw = chain.invoke(inputs)
+            fb_chain = build_chain(fb_llm)
+            try:
+                payload = fb_chain.invoke(inputs)
+            except Exception:
+                payload = None
         else:
-            raise
+            payload = None
 
-    content = getattr(raw, "content", raw)
-
-    try:
-        payload = json.loads(content)
-    except Exception:
-        start, end = content.find("{"), content.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            payload = json.loads(content[start:end + 1])
-        else:
-            payload = {"subject": f"{type}{f'({scope})' if scope else ''}: update", "body": "LLM parsing failed; using fallback."}
+    if not payload or not isinstance(payload, dict):
+        subject, body = _build_fallback_body(files, type, scope)
+        return CommitMessage(subject=subject, body=body)
 
     subject = (payload.get("subject") or "").strip()
     body = (payload.get("body") or "").strip()

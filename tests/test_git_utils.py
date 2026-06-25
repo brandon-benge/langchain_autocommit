@@ -54,6 +54,15 @@ class TestStagedDiffSummary:
         result = staged_diff_summary(temp_git_repo)
         assert isinstance(result, str)
 
+    def test_includes_patch_when_enabled(self, repo_with_staged_changes):
+        result = staged_diff_summary(repo_with_staged_changes, include_patch=True)
+        assert "---PATCH---" in result
+        assert "def hello" in result
+
+    def test_omits_patch_when_disabled(self, repo_with_staged_changes):
+        result = staged_diff_summary(repo_with_staged_changes, include_patch=False)
+        assert "---PATCH---" not in result
+
 
 class TestCommit:
     def test_commits_successfully(self, temp_git_repo):
@@ -91,6 +100,36 @@ class TestInferTypeFromPaths:
 
     def test_empty_list(self):
         assert infer_type_from_paths([]) == "feat"
+
+    def test_js_test_files(self):
+        assert infer_type_from_paths(["__tests__/button.test.js", "__tests__/nav.spec.ts"]) == "test"
+
+    def test_ci_config_files(self):
+        assert infer_type_from_paths([".github/workflows/ci.yml"]) == "chore"
+
+    def test_docker_config(self):
+        assert infer_type_from_paths(["docker/Dockerfile"]) == "chore"
+
+    def test_config_files(self):
+        assert infer_type_from_paths(["config/deploy.yml"]) == "chore"
+
+    def test_fix_path(self):
+        assert infer_type_from_paths(["fix/login-error.py"]) == "fix"
+
+    def test_hotfix_path(self):
+        assert infer_type_from_paths(["hotfix/crash-handler.py"]) == "fix"
+
+    def test_mixed_test_and_src(self):
+        assert infer_type_from_paths(["tests/test_a.py", "src/main.py"]) != "test"
+
+    def test_api_routes(self):
+        assert infer_type_from_paths(["api/routes.py"]) == "feat"
+
+    def test_app_models(self):
+        assert infer_type_from_paths(["app/models/user.py"]) == "feat"
+
+    def test_components(self):
+        assert infer_type_from_paths(["ui/components/Button.tsx"]) == "feat"
 
 
 class TestInferScope:

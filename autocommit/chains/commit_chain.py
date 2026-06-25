@@ -1,5 +1,9 @@
+from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableMap
+
+TRUNCATION_WARNING = "\n\n**Note:** The diff below was truncated. Your view may be incomplete."
+FULL_DIFF_INSTRUCTIONS = "The git diff above (including the actual patch content under ---PATCH---) is the primary source of truth for what changed."
 
 DEFAULT_PROMPT = PromptTemplate.from_template(
     """You are a senior engineer generating a **detailed, comprehensive conventional commit message**.
@@ -26,12 +30,13 @@ Inputs (primary — from git diff):
 - changed_files: {changed_files}
 - diff_summary:
 {diff_summary}
+{truncated_warning}
 
 User-provided context (secondary — describes intent):
 {user_context}
 
 Instructions:
-- The git diff above is the primary source of truth for what changed.
+- {diff_instructions}
 - If user context is provided, use it to understand motivation and intent,
   but verify it against the actual diff.
 - If no user context is provided, ignore this section.
@@ -50,17 +55,29 @@ Return exactly this JSON:
 
 
 def build_chain(llm):
+    parser = JsonOutputParser()
     chain = (
         RunnableMap({
             "type": lambda x: x.get("type"),
             "scope": lambda x: x.get("scope"),
             "ticket": lambda x: x.get("ticket") or "",
-            "changed_files": lambda x: ", ".join(x.get("changed_files", [])[:20]),
-            "diff_summary": lambda x: x.get("diff_summary")[:8000],
+            "changed_files": lambda x: ", ".join(x.get("changed_files", [])[: x.get("max_changed_files", 20)]),
+            "diff_summary": lambda x: _prepare_diff(x),
+            "truncated_warning": lambda x: TRUNCATION_WARNING if x.get("_diff_truncated") else "",
+            "diff_instructions": lambda x: FULL_DIFF_INSTRUCTIONS,
             "max_subject_length": lambda x: x.get("max_subject_length", 72),
             "user_context": lambda x: x.get("user_context", ""),
         })
         | DEFAULT_PROMPT
         | llm
+        | parser
     )
     return chain
+
+
+def _prepare_diff(x: dict) -> str:
+    raw = x.get("diff_summary", "")
+    max_chars = x.get("max_diff_chars", 8000)
+    if max_chars > 0 and len(raw) > max_chars:
+        return raw[:max_chars]
+    return raw

@@ -216,6 +216,9 @@ git:
   default_type: "chore"
   scope_from_folder: true
   max_subject_length: 100
+  max_diff_chars: 8000        # Max chars of actual diff patch sent to LLM
+  max_changed_files: 20       # Max files listed in the prompt
+  include_diff_patch: true    # Include actual patch content in LLM input
   ticket_regex: '[A-Z]{2,}-\d+'
 
 paths:
@@ -240,6 +243,9 @@ paths:
 |  | `conventional` | Enforces `<type>(<scope>): <subject>` style |
 |  | `ticket_regex` | Extracts ticket ID from branch name |
 |  | `max_subject_length` | Clamps subject length to a safe limit |
+|  | `max_diff_chars` | Max characters of the actual diff patch sent to the LLM (0 = unlimited) |
+|  | `max_changed_files` | Max file names listed in the prompt |
+|  | `include_diff_patch` | Whether to include the full diff patch in addition to the stat summary |
 
 ---
 
@@ -249,7 +255,7 @@ You don't need to pass any overrides — these values are inferred automatically
 
 | Value | Source | Default | Example |
 |-------|--------|---------|---------|
-| **type** | File path heuristics: `tests/` or `*_test.py` → `test`, `docs/` or `*.md` → `docs`, `scripts/` or `*.sh` → `chore`, everything else → `feat` | `git.default_type` (`"chore"`) | `feat`, `docs`, `test` |
+| **type** | File path heuristics: `tests/` `__tests__/` `*_test.py` `*.test.js` `*.spec.ts` → `test`; `fix/` `patches/` `hotfix/` → `fix`; `docs/` `*.md` → `docs`; `scripts/` `.github/` `ci/` `config/` `docker/` `*.sh` `*.yml` `Dockerfile` → `chore`; `src/` `api/` `app/` `ui/` `db/` etc. → `feat` | `git.default_type` (`"chore"`) | `feat`, `docs`, `test`, `fix`, `chore` |
 | **scope** | Basename of the current working directory (the repo folder name) | `git.scope_from_folder: true` | `langchain_autocommit` |
 | **ticket** | Regex match against the current git branch name | `git.ticket_regex` (`[A-Z]{2,}-\d+`) | `PROJ-123` from branch `feat/PROJ-123-add-auth` |
 
@@ -257,19 +263,35 @@ To customize any of these, pass overrides in your code or edit the `params.yaml`
 
 ---
 
-## How It Works
+## How Commit Messages Are Generated
+
+The utility prioritizes **factual accuracy** by sending the LLM a rich view of the actual changes:
+
+1. **Git data collection** — The staged diff is collected in three forms: `--name-status` (what files changed and how), `--stat` (line counts per file), and the **full diff patch** (actual code changes with `+`/`-` lines).
+2. **Metadata inference** — Commit type, scope, and ticket ID are inferred from file paths, folder name, and branch name.
+3. **Controlled truncation** — If the diff patch is too large, it's truncated to `max_diff_chars` characters (default 8000). A warning is injected into the prompt so the LLM knows its view is incomplete.
+4. **Structured output** — The LLM returns JSON parsed via `JsonOutputParser` — no fragile regex fallback.
+5. **Graceful fallback** — If the LLM fails or returns unparseable output, a heuristics-based body is generated listing the changed files.
+
+### Data Flow
 
 ```mermaid
 flowchart TD
     A["User API - generate_commit_message()"] --> B["load_config() with overrides"]
     B --> C["Deep-merge params.yaml + overrides"]
-    C --> D["resolve_llm()"]
-    D --> E{"opencode.ai API"}
-    E -->|"success"| F["ChatOpenAI generates commit"]
-    E -->|"any failure"| G["Fallback: ChatOllama (local)"]
-    F --> H["CommitMessage returned"]
-    G --> H
-    H --> I["apply_commit() → git commit/push"]
+    C --> D["Git: name-status + stat + diff patch"]
+    D --> E["Truncate to max_diff_chars"]
+    E --> F["Inject truncation warning if needed"]
+    F --> G["resolve_llm()"]
+    G --> H{"opencode.ai API"}
+    H -->|"success"| I["JsonOutputParser"]
+    H -->|"any failure"| J["Fallback: ChatOllama (local)"]
+    J --> I
+    I --> K{"Parsed OK?"}
+    K -->|"yes"| L["CommitMessage returned"]
+    K -->|"no"| M["Heuristics fallback body"]
+    M --> L
+    L --> N["apply_commit() → git commit/push"]
 ```
 
 ---

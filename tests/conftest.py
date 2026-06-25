@@ -73,4 +73,19 @@ def sample_inputs():
         "changed_files": ["src/main.py", "src/utils.py"],
         "diff_summary": "A---\nM src/main.py\nM src/utils.py\n---\n 2 files changed",
         "max_subject_length": 72,
+        "max_diff_chars": 8000,
+        "max_changed_files": 20,
+        "_diff_truncated": False,
     }
+
+
+@pytest.fixture
+def repo_with_staged_changes(temp_git_repo):
+    repo = temp_git_repo
+    src = os.path.join(repo, "src")
+    os.makedirs(src, exist_ok=True)
+    main_py = os.path.join(src, "main.py")
+    with open(main_py, "w") as f:
+        f.write("def hello():\n    return 'world'\n")
+    subprocess.run(["git", "add", "src/main.py"], cwd=repo, capture_output=True)
+    return repo

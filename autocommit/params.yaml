@@ -27,6 +27,9 @@ git:
   default_type: "chore"
   scope_from_folder: true
   max_subject_length: 100
+  max_diff_chars: 8000
+  max_changed_files: 20
+  include_diff_patch: true
   ticket_regex: '[A-Z]{2,}-\d+'
 
 paths:

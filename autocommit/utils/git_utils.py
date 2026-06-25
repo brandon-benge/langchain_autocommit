@@ -29,10 +29,14 @@ def changed_files(cwd: str) -> List[str]:
         files.append(path)
     return files
 
-def staged_diff_summary(cwd: str) -> str:
+def staged_diff_summary(cwd: str, include_patch: bool = True) -> str:
     code, out, err = _run("git diff --staged --name-status && echo '---' && git diff --staged --stat", cwd)
     if code != 0:
         raise RuntimeError(err)
+    if include_patch:
+        code2, patch, err2 = _run("git diff --staged", cwd)
+        if code2 == 0 and patch.strip():
+            out += "\n---PATCH---\n" + patch
     return out
 
 def autostage_all(cwd: str) -> None:
@@ -57,16 +61,33 @@ def push(cwd: str) -> None:
     if code != 0:
         raise RuntimeError(err)
 
+_TYPE_RULES = [
+    ("test", "all", ["tests/", "__tests__/"], ["_test.py", "_test.go", ".test.js", ".spec.ts", ".spec.js"]),
+    ("fix", "all", ["fix/", "patches/", "hotfix/", "bugfix/"], []),
+    ("docs", "any", ["docs/", "documentation/"], [".md", ".rst", ".tex"]),
+    ("chore", "any", ["scripts/", ".github/", "ci/", "config/", "docker/", ".devcontainer/", ".vscode/"], [".sh", ".yml", ".yaml", "Dockerfile", "Makefile", "docker-compose"]),
+]
+
+
+def _path_matches(p: str, prefixes: list, extensions: list) -> bool:
+    return any(p.startswith(prefix) for prefix in prefixes) or any(p.endswith(ext) for ext in extensions)
+
+
 def infer_type_from_paths(paths: List[str]) -> str:
-    """
-    Heuristic: test/ docs/ build/ chore.
-    """
-    if paths and all(p.startswith("tests/") or p.endswith("_test.py") for p in paths):
-        return "test"
-    if any(p.startswith("docs/") or p.endswith(".md") for p in paths):
-        return "docs"
-    if any(p.startswith("scripts/") or p.startswith(".github/") or p.endswith(".sh") for p in paths):
-        return "chore"
+    if not paths:
+        return "feat"
+    for ctype, mode, prefixes, extensions in _TYPE_RULES:
+        if mode == "all":
+            if all(_path_matches(p, prefixes, extensions) for p in paths):
+                return ctype
+        elif mode == "any":
+            if any(_path_matches(p, prefixes, extensions) for p in paths):
+                return ctype
+    if any(
+        any(p.startswith(prefix) for prefix in ["src/", "app/", "api/", "routes/", "controllers/", "models/", "services/", "ui/", "components/", "pages/", "db/", "migrations/", "lib/", "utils/", "core/", "internal/", "middleware/", "middlewares/"])
+        for p in paths
+    ):
+        return "feat"
     return "feat"
 
 def infer_scope_from_cwd(cwd: str) -> str:
