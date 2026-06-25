@@ -2,6 +2,10 @@
   "name": "InterviewPrep",
   "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
 
+  "remoteEnv": {
+    "OPENCODE_GO_API_KEY": "${localEnv:OPENCODE_GO_API_KEY}"
+  },
+
   "customizations": {
     "vscode": {
       "extensions": [
@@ -13,7 +17,6 @@
       "settings": {
         "editor.formatOnSave": true,
         "terminal.integrated.defaultProfile.linux": "bash",
-
         "workbench.secondarySideBar.defaultVisibility": "hidden",
         "chat.commandCenter.enabled": false
       }
