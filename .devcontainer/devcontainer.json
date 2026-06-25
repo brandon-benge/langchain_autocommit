@@ -1,0 +1,21 @@
+{
+  "name": "InterviewPrep",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "opencode-ai.opencode",
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "postCreateCommand": "npm install -g opencode-ai && git status"
+}
