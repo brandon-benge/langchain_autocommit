@@ -20,5 +20,5 @@
     }
   },
 
-  "postCreateCommand": "python3 -m venv .venv && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && npm install -g opencode-ai && git fetch && git status"
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y python3.13-venv && rm -rf .venv && python3 -m venv .venv && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && npm install -g opencode-ai && git fetch && git status"
 }
