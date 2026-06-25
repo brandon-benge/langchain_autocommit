@@ -3,10 +3,6 @@
 
   "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
 
-  "remoteEnv": {
-    "OPENCODE_API_KEY": "${localEnv:OPENCODE_API_KEY}"
-  },
-
   "customizations": {
     "vscode": {
       "extensions": [
@@ -24,5 +20,5 @@
     }
   },
 
-  "postCreateCommand": "python3 --version && python3 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && npm install -g opencode-ai && git fetch && git status"
+  "postCreateCommand": "python3 -m venv .venv && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && npm install -g opencode-ai && git fetch && git status"
 }
