@@ -31,13 +31,13 @@ New in v2: installable **Python library** with a clean programmatic API, deep-me
 ### Install
 
 ```bash
-pip install git+https://github.com/your-org/langchain-autocommit.git
+pip install git+https://github.com/brandon-benge/langchain_autocommit.git
 ```
 
 Or from a specific branch/tag:
 
 ```bash
-pip install git+https://github.com/your-org/langchain-autocommit.git@v2.0.0
+pip install git+https://github.com/brandon-benge/langchain_autocommit.git@v2.0.0
 ```
 
 ### Quick Start
@@ -289,7 +289,7 @@ Then uncomment the `keychain` block in `params.yaml` and comment out `env_var`.
 The CLI is available as a secondary entry point:
 
 ```bash
-pip install git+https://github.com/your-org/langchain-autocommit.git
+pip install git+https://github.com/brandon-benge/langchain_autocommit.git
 autocommit --autostage
 ```
 
