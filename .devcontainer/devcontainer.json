@@ -12,7 +12,10 @@
       ],
       "settings": {
         "editor.formatOnSave": true,
-        "terminal.integrated.defaultProfile.linux": "bash"
+        "terminal.integrated.defaultProfile.linux": "bash",
+
+        "workbench.secondarySideBar.defaultVisibility": "hidden",
+        "chat.commandCenter.enabled": false
       }
     }
   },
