@@ -34,10 +34,11 @@ New in v2: installable **Python library** with a clean programmatic API, deep-me
 pip install git+https://github.com/brandon-benge/langchain_autocommit.git
 ```
 
-Or from a specific branch/tag:
+Or pin to a tag or branch:
 
 ```bash
 pip install git+https://github.com/brandon-benge/langchain_autocommit.git@v2.0.0
+pip install git+https://github.com/brandon-benge/langchain_autocommit.git@main
 ```
 
 ### Quick Start
