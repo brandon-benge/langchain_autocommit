@@ -1,7 +1,5 @@
 project_name: "LangChain AutoCommit"
 python_version: "3.10"
-venv_dir: "../venv"
-
 llm:
   primary:
     base_url: "https://opencode.ai/zen/go/v1"

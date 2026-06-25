@@ -27,7 +27,7 @@ yaml_get () {
 }
 
 PY_VER=$(yaml_get "python_version" "3.10")
-VENV_DIR=$(yaml_get "venv_dir" ".venv")
+VENV_DIR=".venv"
 
 # Codespaces/container path should resolve from the repo root, not from .venv/bin
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

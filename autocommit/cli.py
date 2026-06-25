@@ -26,6 +26,45 @@ def _merge_flag(flag_val, config_val, default=False):
     return _bool(config_val, default)
 
 
+def _build_llm_overrides(args) -> dict:
+    """Build config_overrides dict from CLI flags for LLM params."""
+    primary_overrides = {}
+
+    if args.keychain is True and args.env_var is True:
+        print("error: --keychain and --env-var are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+
+    if args.keychain is True:
+        primary_overrides["keychain"] = {
+            "service": args.keychain_service or "langchain_autocommit",
+            "key": args.keychain_key or "opencode_api_key",
+        }
+        primary_overrides["env_var"] = None
+    elif args.keychain is False:
+        primary_overrides["keychain"] = None
+
+    if args.env_var is True:
+        primary_overrides["env_var"] = args.env_var_name or "OPENCODE_API_KEY"
+        primary_overrides["keychain"] = None
+    elif args.env_var is False:
+        primary_overrides["env_var"] = None
+
+    if args.base_url is not None:
+        primary_overrides["base_url"] = args.base_url
+    if args.model is not None:
+        primary_overrides["model"] = args.model
+    if args.temperature is not None:
+        primary_overrides["temperature"] = args.temperature
+    if args.max_tokens is not None:
+        primary_overrides["max_tokens"] = args.max_tokens
+    if args.timeout is not None:
+        primary_overrides["timeout"] = args.timeout
+
+    if primary_overrides:
+        return {"llm": {"primary": primary_overrides}}
+    return {}
+
+
 def main(argv=None):
     argv = argv or sys.argv[1:]
     ap = argparse.ArgumentParser(description="LangChain auto-commit using local LLM")
@@ -69,9 +108,37 @@ def main(argv=None):
 
     ap.add_argument("--max-subject-length", type=int, default=0,
                     help="Override max subject line length")
+
+    ap.add_argument("--keychain", action="store_true", dest="keychain", default=None,
+                    help="Enable API key lookup from macOS Keychain")
+    ap.add_argument("--no-keychain", action="store_false", dest="keychain", default=None,
+                    help="Disable API key lookup from macOS Keychain")
+    ap.add_argument("--keychain-service", type=str, default=None,
+                    help="Keychain service name (default: langchain_autocommit)")
+    ap.add_argument("--keychain-key", type=str, default=None,
+                    help="Keychain key name (default: opencode_api_key)")
+
+    ap.add_argument("--env-var", action="store_true", dest="env_var", default=None,
+                    help="Enable API key lookup from environment variable")
+    ap.add_argument("--no-env-var", action="store_false", dest="env_var", default=None,
+                    help="Disable API key lookup from environment variable")
+    ap.add_argument("--env-var-name", type=str, default=None,
+                    help="Environment variable name (default: OPENCODE_API_KEY)")
+
+    ap.add_argument("--base-url", type=str, default=None,
+                    help="Override LLM base URL")
+    ap.add_argument("--model", type=str, default=None,
+                    help="Override LLM model name")
+    ap.add_argument("--temperature", type=float, default=None,
+                    help="Override LLM temperature")
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help="Override LLM max tokens")
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="Override LLM timeout in seconds")
     args = ap.parse_args(argv)
 
-    cfg = load_config()
+    config_overrides = _build_llm_overrides(args)
+    cfg = load_config(config_overrides)
     if args.show_config:
         print(json.dumps(cfg, indent=2))
         return 0

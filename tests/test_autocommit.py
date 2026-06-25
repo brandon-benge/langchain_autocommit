@@ -1,8 +1,10 @@
+import argparse
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from autocommit.cli import _build_llm_overrides
 from autocommit.core import _bool
 
 
@@ -49,6 +51,118 @@ class TestMergeFlag:
     def test_none_flag_and_no_config_uses_default(self):
         assert _merge_flag(None, None, default=True) is True
         assert _merge_flag(None, None, default=False) is False
+
+
+class TestBuildLlmOverrides:
+    def _args(self, **kwargs):
+        defaults = dict(
+            keychain=None,
+            env_var=None,
+            keychain_service=None,
+            keychain_key=None,
+            env_var_name=None,
+            base_url=None,
+            model=None,
+            temperature=None,
+            max_tokens=None,
+            timeout=None,
+        )
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    def test_keychain_enables_keychain_and_disables_env_var(self):
+        overrides = _build_llm_overrides(self._args(keychain=True))
+        primary = overrides["llm"]["primary"]
+        assert primary["keychain"] == {"service": "langchain_autocommit", "key": "opencode_api_key"}
+        assert primary["env_var"] is None
+
+    def test_keychain_with_custom_service_key(self):
+        overrides = _build_llm_overrides(self._args(
+            keychain=True,
+            keychain_service="my_service",
+            keychain_key="my_key",
+        ))
+        primary = overrides["llm"]["primary"]
+        assert primary["keychain"] == {"service": "my_service", "key": "my_key"}
+        assert primary["env_var"] is None
+
+    def test_no_keychain_disables_keychain(self):
+        overrides = _build_llm_overrides(self._args(keychain=False))
+        assert overrides["llm"]["primary"]["keychain"] is None
+
+    def test_env_var_enables_env_var_and_disables_keychain(self):
+        overrides = _build_llm_overrides(self._args(env_var=True))
+        primary = overrides["llm"]["primary"]
+        assert primary["env_var"] == "OPENCODE_API_KEY"
+        assert primary["keychain"] is None
+
+    def test_env_var_with_custom_name(self):
+        overrides = _build_llm_overrides(self._args(
+            env_var=True,
+            env_var_name="MY_CUSTOM_KEY",
+        ))
+        primary = overrides["llm"]["primary"]
+        assert primary["env_var"] == "MY_CUSTOM_KEY"
+        assert primary["keychain"] is None
+
+    def test_no_env_var_disables_env_var(self):
+        overrides = _build_llm_overrides(self._args(env_var=False))
+        assert overrides["llm"]["primary"]["env_var"] is None
+
+    def test_keychain_and_env_var_both_true_errors(self):
+        with pytest.raises(SystemExit):
+            _build_llm_overrides(self._args(keychain=True, env_var=True))
+
+    def test_base_url_override(self):
+        overrides = _build_llm_overrides(self._args(base_url="https://custom.url/v1"))
+        assert overrides["llm"]["primary"]["base_url"] == "https://custom.url/v1"
+
+    def test_model_override(self):
+        overrides = _build_llm_overrides(self._args(model="gpt-4"))
+        assert overrides["llm"]["primary"]["model"] == "gpt-4"
+
+    def test_temperature_override(self):
+        overrides = _build_llm_overrides(self._args(temperature=0.7))
+        assert overrides["llm"]["primary"]["temperature"] == 0.7
+
+    def test_max_tokens_override(self):
+        overrides = _build_llm_overrides(self._args(max_tokens=2048))
+        assert overrides["llm"]["primary"]["max_tokens"] == 2048
+
+    def test_timeout_override(self):
+        overrides = _build_llm_overrides(self._args(timeout=120))
+        assert overrides["llm"]["primary"]["timeout"] == 120
+
+    def test_multiple_scalar_overrides(self):
+        overrides = _build_llm_overrides(self._args(
+            base_url="https://custom.url",
+            model="gpt-4",
+            temperature=0.5,
+            max_tokens=1024,
+            timeout=30,
+        ))
+        primary = overrides["llm"]["primary"]
+        assert primary["base_url"] == "https://custom.url"
+        assert primary["model"] == "gpt-4"
+        assert primary["temperature"] == 0.5
+        assert primary["max_tokens"] == 1024
+        assert primary["timeout"] == 30
+
+    def test_mixed_keychain_and_scalar_overrides(self):
+        overrides = _build_llm_overrides(self._args(
+            keychain=True,
+            keychain_service="svc",
+            keychain_key="k",
+            model="deepseek-v4-pro",
+        ))
+        primary = overrides["llm"]["primary"]
+        assert primary["keychain"] == {"service": "svc", "key": "k"}
+        assert primary["model"] == "deepseek-v4-pro"
+        assert primary["env_var"] is None
+
+    def test_no_flags_returns_empty_dict(self):
+        overrides = _build_llm_overrides(self._args())
+        assert overrides == {}
 
 
 class TestCliArgs:

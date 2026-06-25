@@ -22,7 +22,20 @@ New in v2: installable **Python library** with a clean programmatic API, deep-me
 | `autocommit/utils/keychain.py` | macOS Keychain wrapper; env var also supported |
 | `autocommit/params.yaml` | Bundled default configuration |
 | `pyproject.toml` | Package metadata and dependencies |
+| `run_venv.sh` | Development setup script — creates a `.venv`, installs deps, and builds the package |
 | `tests/` | pytest suite (54 tests) |
+
+---
+
+## Development Setup
+
+For contributors or local development, use `run_venv.sh` to bootstrap the environment:
+
+```bash
+./run_venv.sh
+```
+
+This creates a `.venv` in the repo root, installs all dependencies (including dev/test extras), installs the package in editable mode, and builds the package. The CLI entry point will be available at `.venv/bin/autocommit`.
 
 ---
 
@@ -176,8 +189,6 @@ Bundled with the package. All runtime defaults live here.
 ```yaml
 project_name: "LangChain AutoCommit"
 python_version: "3.10"
-venv_dir: "../venv"
-
 llm:
   primary:
     base_url: "https://opencode.ai/zen/go/v1"
@@ -279,9 +290,25 @@ The bundled `params.yaml` uses `env_var: "OPENCODE_API_KEY"` by default — no c
 autocommit --setup-key
 ```
 
-Then uncomment the `keychain` block in `params.yaml` and comment out `env_var`.
+Then enable keychain at runtime with:
 
-> **Important:** Only ONE method may be configured. Setting both `keychain` and `env_var` causes an error.
+```bash
+autocommit --keychain
+```
+
+Or switch back to environment variable with:
+
+```bash
+autocommit --env-var
+```
+
+You can also specify custom keychain credentials:
+
+```bash
+autocommit --keychain --keychain-service "myapp" --keychain-key "prod_key"
+```
+
+> **Important:** Only ONE method may be active at a time. Enabling `--keychain` automatically disables the env var method (and vice versa). Passing both explicitly raises an error.
 
 ---
 
@@ -298,21 +325,36 @@ autocommit --autostage
 
 | Flag | Description |
 |------|-------------|
+| | **Commit message** |
 | `-c, --context TEXT` | Optional context describing what changed and why |
 | `-n, --committer TEXT` | Committer name to include in commit body |
 | `-t, --type TYPE` | Override commit type |
 | `-s, --scope SCOPE` | Override commit scope |
 | `--ticket TICKET` | Override ticket ID |
 | `--max-subject-length N` | Override max subject length |
+| | **Git behavior** |
 | `--autostage` / `--no-autostage` | Enable/disable auto-staging |
 | `--amend` / `--no-amend` | Enable/disable amending |
 | `--push` / `--no-push` | Enable/disable push after commit |
 | `--signoff` / `--no-signoff` | Enable/disable Signed-off-by |
 | `--conventional` / `--no-conventional` | Enable/disable conventional format |
+| | **Runtime** |
 | `--dry-run` | Show proposed commit without applying |
 | `-y, --yes` | Skip confirmation prompt |
 | `--show-config` | Print parsed config and exit |
 | `--setup-key` | Store API key in macOS Keychain |
+| | **LLM overrides** |
+| `--keychain` / `--no-keychain` | Enable/disable API key lookup from macOS Keychain |
+| `--keychain-service TEXT` | Keychain service name (default: `langchain_autocommit`) |
+| `--keychain-key TEXT` | Keychain key name (default: `opencode_api_key`) |
+| `--env-var` / `--no-env-var` | Enable/disable API key lookup from env var |
+| `--env-var-name TEXT` | Environment variable name (default: `OPENCODE_API_KEY`) |
+| `--keychain` and `--env-var` are mutually exclusive; enabling one auto-disables the other |
+| `--base-url TEXT` | Override LLM base URL |
+| `--model TEXT` | Override LLM model name |
+| `--temperature FLOAT` | Override LLM temperature |
+| `--max-tokens N` | Override LLM max tokens |
+| `--timeout N` | Override LLM timeout in seconds |
 
 ---
 
