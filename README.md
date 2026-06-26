@@ -39,6 +39,22 @@ This creates a `.venv` in the repo root, installs all dependencies (including de
 
 ---
 
+## Spec-Driven Development
+
+This repository uses a local SpecRepo scaffold in `specrepo/`.
+
+Feature work should start by adding a request file under
+`specrepo/requests/` using `specrepo/templates/feature-request.md`. A spec
+reviewer then creates an architecture proposal under `specrepo/proposals/` and
+asks for approval. Implementation begins only after a human approval record
+exists under `specrepo/approved/` and a coding agent has recorded its
+pre-implementation architecture review under `specrepo/implementation-reviews/`.
+
+The current product, architecture, and quality baseline lives in
+`specrepo/specs/`.
+
+---
+
 ## Library Usage
 
 ### Install

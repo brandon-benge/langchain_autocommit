@@ -1,0 +1,52 @@
+schema_version: 1
+name: langchain-autocommit-specrepo
+project:
+  name: LangChain AutoCommit
+  package: autocommit
+  language: python
+  min_python: "3.10"
+  description: >
+    Agentic Git automation library and CLI that generates conventional commit
+    messages from staged Git diffs using a primary OpenAI-compatible provider
+    with local Ollama fallback.
+source_roots:
+  - autocommit
+test_roots:
+  - tests
+baseline_specs:
+  product: specrepo/specs/product.md
+  architecture: specrepo/specs/architecture.md
+  quality: specrepo/specs/quality.md
+workflow:
+  request_inbox: specrepo/requests
+  proposal_dir: specrepo/proposals
+  approved_dir: specrepo/approved
+  implementation_review_dir: specrepo/implementation-reviews
+  states:
+    - requested
+    - architecture_proposed
+    - awaiting_approval
+    - approved
+    - implementation_reviewed
+    - implementing
+    - verified
+    - closed
+required_gates:
+  before_architecture_update:
+    - request_file_exists
+    - current_specs_read
+  before_implementation:
+    - approved_architecture_exists
+    - implementation_review_exists
+    - test_plan_exists
+  before_close:
+    - tests_run_or_exception_recorded
+    - specs_updated_if_behavior_changed
+commands:
+  test: pytest
+  package_metadata: pyproject.toml
+  default_config: autocommit/params.yaml
+agent_policy:
+  spec_reviewer_may_edit_code: false
+  coding_agent_must_review_approved_architecture: true
+  implementation_requires_human_approval: true
