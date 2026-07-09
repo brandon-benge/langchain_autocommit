@@ -3,17 +3,11 @@
 from __future__ import annotations
 
 import concurrent.futures
-import warnings
 from typing import TypedDict
 
-# Suppress LangGraph deprecation warning about allowed_objects default.
-# langchain_core inserts its own filter at position 0 after our first import,
-# so we must register our ignore filter AFTER langchain_core is fully loaded.
-from langchain_core._api.deprecation import LangChainPendingDeprecationWarning
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
-warnings.simplefilter("ignore", LangChainPendingDeprecationWarning)
 
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph

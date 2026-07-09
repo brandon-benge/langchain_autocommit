@@ -1,5 +1,7 @@
 """Tests for the LangGraph commit-message pipeline."""
 
+import subprocess
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,6 +9,36 @@ import pytest
 from autocommit.chains.commit_chain import _check_quality, build_graph
 
 pytest.importorskip("langgraph.graph.state")
+
+
+# ---------------------------------------------------------------------------
+# Import behavior
+# ---------------------------------------------------------------------------
+
+
+def test_import_does_not_emit_allowed_objects_warning():
+    script = """
+import warnings
+from langchain_core._api.deprecation import LangChainPendingDeprecationWarning
+
+warnings.simplefilter("always", LangChainPendingDeprecationWarning)
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always", LangChainPendingDeprecationWarning)
+    import autocommit.chains.commit_chain  # noqa: F401
+
+messages = [str(item.message) for item in caught]
+if any("allowed_objects" in message for message in messages):
+    raise SystemExit("\\n".join(messages))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 # ---------------------------------------------------------------------------
