@@ -76,39 +76,50 @@ class TestGenerateCommitMessageEarlyExit:
         assert msg.body == ""
 
 
+class _MockGraph:
+    """Minimal mock for CompiledStateGraph that returns a fixed result."""
+
+    def __init__(self, result=None, side_effect=None):
+        self._result = result or {"draft_subject": "", "draft_body": ""}
+        self._side_effect = side_effect
+
+    def invoke(self, state, config=None, **kwargs):
+        if self._side_effect:
+            raise self._side_effect
+        return self._result
+
+
 class TestGenerateCommitMessageLlmFallback:
-    def _setup_mocks(self, mocker, chain_return=None, chain_side_effect=None):
+    def _setup_mocks(self, mocker, graph_result=None, graph_side_effect=None):
         mocker.patch("autocommit.core.changed_files", return_value=["src/main.py"])
         mocker.patch("autocommit.core.staged_diff_summary", return_value="A---\nA src/main.py\n---\n 1 file changed")
         mocker.patch("autocommit.core.load_config",
                      return_value={"llm": {}, "git": {"conventional": False, "scope_from_folder": False}})
         mocker.patch("autocommit.core.ensure_git_repo")
         mocker.patch("autocommit.core.current_branch", return_value="main")
-        mock_chain = MagicMock()
-        mock_chain.invoke.return_value = chain_return
-        if chain_side_effect:
-            mock_chain.invoke.side_effect = chain_side_effect
+        mock_graph = _MockGraph(result=graph_result, side_effect=graph_side_effect)
         mocker.patch("autocommit.core.resolve_llm", return_value=(MagicMock(), "opencode"))
-        mocker.patch("autocommit.core.build_chain", return_value=mock_chain)
-        return mock_chain
+        mocker.patch("autocommit.core.build_fallback_llm")
+        mocker.patch("autocommit.core.build_graph", return_value=mock_graph)
+        return mock_graph
 
     def test_fallback_body_on_llm_failure(self, mocker):
-        self._setup_mocks(mocker, chain_side_effect=Exception("LLM error"))
-        mocker.patch("autocommit.core.build_fallback_llm")
+        self._setup_mocks(mocker, graph_result={"draft_subject": "", "draft_body": ""})
 
         msg = generate_commit_message(cwd="/tmp")
         assert "update" in msg.subject
         assert "1 file" in msg.body
 
     def test_fallback_body_on_parse_failure(self, mocker):
-        self._setup_mocks(mocker, chain_return=None)
+        # Simulate graph returning None (should not happen in practice, but defensive)
+        self._setup_mocks(mocker, graph_result=None)
 
         msg = generate_commit_message(cwd="/tmp")
         assert "update" in msg.subject
         assert "1 file" in msg.body
 
     def test_committer_appended_to_body(self, mocker):
-        self._setup_mocks(mocker, chain_return={"subject": "feat: add thing", "body": "Added the thing"})
+        self._setup_mocks(mocker, graph_result={"draft_subject": "feat: add thing", "draft_body": "Added the thing"})
 
         msg = generate_commit_message(cwd="/tmp", committer="Jane Doe")
         assert "Jane Doe" in msg.body
@@ -116,25 +127,24 @@ class TestGenerateCommitMessageLlmFallback:
 
 
 class TestGenerateCommitMessageSubjectTruncation:
-    def _setup_mocks(self, mocker, chain_return=None):
+    def _setup_mocks(self, mocker, graph_result=None):
         mocker.patch("autocommit.core.changed_files", return_value=["src/main.py"])
         mocker.patch("autocommit.core.staged_diff_summary", return_value="A---\nA src/main.py\n---\n 1 file changed")
         mocker.patch("autocommit.core.load_config",
                      return_value={"llm": {}, "git": {"conventional": False, "scope_from_folder": False}})
         mocker.patch("autocommit.core.ensure_git_repo")
         mocker.patch("autocommit.core.current_branch", return_value="main")
-        mock_chain = MagicMock()
-        mock_chain.invoke.return_value = chain_return
+        mock_graph = _MockGraph(result=graph_result)
         mocker.patch("autocommit.core.resolve_llm", return_value=(MagicMock(), "opencode"))
-        mocker.patch("autocommit.core.build_chain", return_value=mock_chain)
+        mocker.patch("autocommit.core.build_graph", return_value=mock_graph)
 
     def test_no_truncation_needed(self, mocker):
-        self._setup_mocks(mocker, chain_return={"subject": "short", "body": "body"})
+        self._setup_mocks(mocker, graph_result={"draft_subject": "short", "draft_body": "body"})
         msg = generate_commit_message(cwd="/tmp", max_subject_length=100)
         assert msg.subject == "short"
 
     def test_subject_truncated(self, mocker):
         long_subject = "a" * 50 + " " + "b" * 50
-        self._setup_mocks(mocker, chain_return={"subject": long_subject, "body": "body"})
+        self._setup_mocks(mocker, graph_result={"draft_subject": long_subject, "draft_body": "body"})
         msg = generate_commit_message(cwd="/tmp", max_subject_length=30)
         assert len(msg.subject) <= 30

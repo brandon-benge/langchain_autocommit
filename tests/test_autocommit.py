@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from autocommit.cli import _build_llm_overrides
+from autocommit.cli import _build_llm_overrides, _build_quality_overrides, _merge_config_overrides
 from autocommit.core import _bool
 
 
@@ -163,6 +163,69 @@ class TestBuildLlmOverrides:
     def test_no_flags_returns_empty_dict(self):
         overrides = _build_llm_overrides(self._args())
         assert overrides == {}
+
+
+class TestBuildQualityOverrides:
+    def _args(self, **kwargs):
+        defaults = dict(
+            quality_max_retries=None,
+            min_body_lines=None,
+            check_boilerplate=None,
+        )
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    def test_no_flags_returns_empty_dict(self):
+        overrides = _build_quality_overrides(self._args())
+        assert overrides == {}
+
+    def test_quality_max_retries(self):
+        overrides = _build_quality_overrides(self._args(quality_max_retries=5))
+        assert overrides == {"git": {"quality": {"max_retries": 5}}}
+
+    def test_min_body_lines(self):
+        overrides = _build_quality_overrides(self._args(min_body_lines=10))
+        assert overrides == {"git": {"quality": {"min_body_lines": 10}}}
+
+    def test_check_boilerplate_true(self):
+        overrides = _build_quality_overrides(self._args(check_boilerplate=True))
+        assert overrides == {"git": {"quality": {"check_boilerplate": True}}}
+
+    def test_check_boilerplate_false(self):
+        overrides = _build_quality_overrides(self._args(check_boilerplate=False))
+        assert overrides == {"git": {"quality": {"check_boilerplate": False}}}
+
+    def test_multiple_flags(self):
+        overrides = _build_quality_overrides(self._args(
+            quality_max_retries=3,
+            min_body_lines=5,
+            check_boilerplate=True,
+        ))
+        quality = overrides["git"]["quality"]
+        assert quality["max_retries"] == 3
+        assert quality["min_body_lines"] == 5
+        assert quality["check_boilerplate"] is True
+
+
+class TestMergeConfigOverrides:
+    def test_empty_dicts(self):
+        result = _merge_config_overrides({}, {})
+        assert result == {}
+
+    def test_single_dict(self):
+        result = _merge_config_overrides({"a": 1})
+        assert result == {"a": 1}
+
+    def test_merge_two_dicts(self):
+        result = _merge_config_overrides({"llm": {"primary": {"model": "gpt-4"}}},
+                                         {"git": {"quality": {"max_retries": 2}}})
+        assert result["llm"]["primary"]["model"] == "gpt-4"
+        assert result["git"]["quality"]["max_retries"] == 2
+
+    def test_later_overrides_win(self):
+        result = _merge_config_overrides({"git": {"quality": {"max_retries": 1}}},
+                                         {"git": {"quality": {"max_retries": 5}}})
+        assert result["git"]["quality"]["max_retries"] == 5
 
 
 class TestCliArgs:

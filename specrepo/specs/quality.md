@@ -21,8 +21,8 @@ Feature changes must include focused tests for the affected layer:
 - Git wrapper behavior in `tests/test_git_utils.py`.
 - LLM provider selection in `tests/test_llm_provider.py`.
 - Config loading and deep-merge behavior in config-focused tests.
-- Prompt or parser behavior in commit-chain tests when model input or output
-  contracts change.
+- Prompt, parser, or graph topology behavior in `tests/test_commit_chain.py`
+  when model input, output, or graph structure changes.
 
 ## Compatibility Rules
 

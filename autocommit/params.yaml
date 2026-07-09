@@ -31,6 +31,10 @@ git:
   max_changed_files: 20
   include_diff_patch: true
   ticket_regex: '[A-Z]{2,}-\d+'
+  quality:
+    max_retries: 2
+    min_body_lines: 3
+    check_boilerplate: true
 
 paths:
   logs_dir: "logs"

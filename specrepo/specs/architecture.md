@@ -21,7 +21,7 @@ future approved proposal changes that contract.
 | `autocommit/core.py` | Coordinates config loading, Git inspection, LLM generation, fallback commit body creation, and commit application. |
 | `autocommit/config.py` | Loads bundled YAML config and deep-merges caller overrides without mutating the base config. |
 | `autocommit/cli.py` | Parses CLI flags, translates them into config overrides and core API calls, prompts before committing unless skipped. |
-| `autocommit/chains/commit_chain.py` | Builds the LangChain prompt pipeline and parses model output as JSON. |
+| `autocommit/chains/commit_chain.py` | Builds the LangGraph `StateGraph` with three specialized agents (diff analyzer, message writer, quality checker), parallel diff analysis, and quality-loop routing. Exports `build_graph(llm, fallback_llm, config)`. |
 | `autocommit/utils/git_utils.py` | Wraps Git subprocess calls and provides path-based commit type, scope, and ticket helpers. |
 | `autocommit/utils/llm_provider.py` | Resolves primary OpenAI-compatible model access and local Ollama fallback. |
 | `autocommit/utils/keychain.py` | Reads and writes API keys through the local keyring backend. |
@@ -35,15 +35,29 @@ future approved proposal changes that contract.
 4. It reads changed files and staged diff summary.
 5. It returns an empty `CommitMessage("", "")` when there is no meaningful
    staged diff.
-6. It resolves commit type, scope, branch ticket, diff truncation, and prompt
-   inputs.
-7. It builds the primary LLM through `resolve_llm` and invokes the LangChain
-   commit chain.
-8. If primary invocation fails and the primary provider was used, it retries
-   with the fallback Ollama model.
-9. If model output is missing or not a dict, it returns a deterministic fallback
-   subject and body based on changed files.
-10. It truncates the subject to the configured maximum and appends committer
+6. It resolves commit type (from file paths), scope (from folder), branch
+   ticket, diff truncation, and conventional-mode flag.
+7. It builds the primary and fallback LLMs through `resolve_llm` and
+   `build_fallback_llm`, then constructs a compiled LangGraph `StateGraph`
+   via `build_graph(llm, fallback_llm, config)`.
+8. It invokes the graph with an initial `GraphState` dict containing the raw
+   diff, changed files, heuristic type/scope/ticket, LLM instances, and
+   quality-loop bookkeeping.
+9. The graph executes three nodes in sequence:
+   - **analyze_diff** — runs `analyze_type` and `analyze_scope` LLM sub-tasks
+     concurrently. Each receives the full (truncated) diff with a focused
+     prompt. Results are gathered into `state.diff_analysis`.
+   - **write_message** — consumes the structured analysis plus the raw diff
+     and produces a draft `CommitMessage`-shaped dict.
+   - **check_quality** — runs deterministic (rule-based) checks on the draft.
+     If checks fail and the retry budget (`git.quality.max_retries`, default 2)
+     is not exhausted, the graph routes back to `write_message` with a
+     critique. Otherwise it routes to output.
+10. Each LLM agent node tries the primary provider first; on failure it retries
+    with the fallback Ollama model. If both fail, the node records an error.
+11. If the output is missing or empty, `generate_commit_message` returns a
+    deterministic fallback subject and body based on changed files.
+12. It truncates the subject to the configured maximum and appends committer
     metadata when provided.
 
 ## Commit Application Flow

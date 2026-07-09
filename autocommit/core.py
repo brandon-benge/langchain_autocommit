@@ -2,7 +2,7 @@ import os
 from typing import NamedTuple
 
 from autocommit.config import load_config
-from autocommit.chains.commit_chain import build_chain
+from autocommit.chains.commit_chain import build_graph
 from autocommit.utils.llm_provider import build_fallback_llm, resolve_llm
 from autocommit.utils.git_utils import (
     autostage_all,
@@ -99,10 +99,11 @@ def generate_commit_message(
     if len(content_lines) <= 1:
         return CommitMessage("", "")
 
+    if conventional is None:
+        conventional = _bool(git_cfg.get("conventional", True))
+
     if type is None:
         type = git_cfg.get("default_type", "chore")
-        if conventional is None:
-            conventional = _bool(git_cfg.get("conventional", True))
         if conventional:
             inferred = infer_type_from_paths(files)
             type = inferred or type
@@ -126,41 +127,44 @@ def generate_commit_message(
         diff = diff[:max_diff_chars]
 
     llm_model, provider_used = resolve_llm(llm_cfg)
-    chain = build_chain(llm_model)
+    fallback_llm = build_fallback_llm(llm_cfg)
+    graph = build_graph(llm_model, fallback_llm, cfg)
 
-    inputs = dict(
-        type=type,
-        scope=scope,
-        ticket=ticket,
+    initial_state: dict = dict(
+        raw_diff=diff,
         changed_files=files,
-        diff_summary=diff,
+        user_context=context or "",
         max_subject_length=max_subject_length,
         max_diff_chars=max_diff_chars,
         max_changed_files=max_changed_files,
-        _diff_truncated=_diff_truncated,
-        user_context=context or "",
+        diff_truncated=_diff_truncated,
+        heuristic_type=type,
+        heuristic_scope=scope,
+        ticket=ticket,
+        conventional=conventional,
+        primary_llm=llm_model,
+        fallback_llm=fallback_llm,
+        retry_count=0,
+        critique_history=[],
+        errors=[],
+        diff_analysis=None,
+        draft_subject="",
+        draft_body="",
+        quality_passed=False,
     )
 
-    payload = None
-    try:
-        payload = chain.invoke(inputs)
-    except Exception:
-        if provider_used == "opencode":
-            fb_llm = build_fallback_llm(llm_cfg)
-            fb_chain = build_chain(fb_llm)
-            try:
-                payload = fb_chain.invoke(inputs)
-            except Exception:
-                payload = None
-        else:
-            payload = None
+    result = graph.invoke(initial_state)
 
-    if not payload or not isinstance(payload, dict):
+    if not result or not isinstance(result, dict):
         subject, body = _build_fallback_body(files, type, scope)
         return CommitMessage(subject=subject, body=body)
 
-    subject = (payload.get("subject") or "").strip()
-    body = (payload.get("body") or "").strip()
+    subject = (result.get("draft_subject") or "").strip()
+    body = (result.get("draft_body") or "").strip()
+
+    if not subject and not body:
+        subject, body = _build_fallback_body(files, type, scope)
+        return CommitMessage(subject=subject, body=body)
 
     if len(subject) > max_subject_length:
         truncated = subject[:max_subject_length]

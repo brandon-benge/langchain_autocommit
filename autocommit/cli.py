@@ -65,6 +65,30 @@ def _build_llm_overrides(args) -> dict:
     return {}
 
 
+def _build_quality_overrides(args) -> dict:
+    """Build config_overrides dict from CLI flags for git.quality.* params."""
+    overrides = {}
+    if args.quality_max_retries is not None:
+        overrides["max_retries"] = args.quality_max_retries
+    if args.min_body_lines is not None:
+        overrides["min_body_lines"] = args.min_body_lines
+    if args.check_boilerplate is not None:
+        overrides["check_boilerplate"] = args.check_boilerplate
+    if overrides:
+        return {"git": {"quality": overrides}}
+    return {}
+
+
+def _merge_config_overrides(*dicts: dict) -> dict:
+    """Deep-merge multiple config override dicts, later wins."""
+    result: dict = {}
+    for d in dicts:
+        if d:
+            from autocommit.config import deep_merge
+            result = deep_merge(result, d)
+    return result
+
+
 def main(argv=None):
     argv = argv or sys.argv[1:]
     ap = argparse.ArgumentParser(description="LangChain auto-commit using local LLM")
@@ -109,6 +133,15 @@ def main(argv=None):
     ap.add_argument("--max-subject-length", type=int, default=0,
                     help="Override max subject line length")
 
+    ap.add_argument("--quality-max-retries", type=int, default=None,
+                    help="Override max quality-loop retries (git.quality.max_retries)")
+    ap.add_argument("--min-body-lines", type=int, default=None,
+                    help="Override min body lines for quality check (git.quality.min_body_lines)")
+    ap.add_argument("--check-boilerplate", action="store_true", dest="check_boilerplate", default=None,
+                    help="Enable boilerplate detection in quality check")
+    ap.add_argument("--no-check-boilerplate", action="store_false", dest="check_boilerplate", default=None,
+                    help="Disable boilerplate detection in quality check")
+
     ap.add_argument("--keychain", action="store_true", dest="keychain", default=None,
                     help="Enable API key lookup from macOS Keychain")
     ap.add_argument("--no-keychain", action="store_false", dest="keychain", default=None,
@@ -137,7 +170,10 @@ def main(argv=None):
                     help="Override LLM timeout in seconds")
     args = ap.parse_args(argv)
 
-    config_overrides = _build_llm_overrides(args)
+    config_overrides = _merge_config_overrides(
+        _build_llm_overrides(args),
+        _build_quality_overrides(args),
+    )
     cfg = load_config(config_overrides)
     if args.show_config:
         print(json.dumps(cfg, indent=2))
