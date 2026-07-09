@@ -7,3 +7,4 @@ venv/
 logs/
 tmp/
 .DS_Store
+.coverage
