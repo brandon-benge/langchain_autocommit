@@ -238,8 +238,11 @@ def main(argv=None):
     print("Committed.")
 
     if _merge_flag(args.push, git_cfg.get("push_after_commit", False)):
-        push(cwd)
-        print("Pushed.")
+        try:
+            push(cwd)
+            print("Pushed.")
+        except Exception as e:
+            print(f"  Push skipped ({e}).")
 
     return 0
 
