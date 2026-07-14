@@ -45,6 +45,7 @@ def _build_fallback_body(files: list, type: str, scope: str) -> tuple:
 def generate_commit_message(
     *,
     config: dict | None = None,
+    config_path: str | None = None,
     config_overrides: dict | None = None,
     type: str | None = None,
     scope: str | None = None,
@@ -61,7 +62,7 @@ def generate_commit_message(
         cwd = os.getcwd()
 
     if config is None:
-        cfg = load_config(config_overrides)
+        cfg = load_config(config_path, config_overrides)
     else:
         cfg = config
         if config_overrides:
@@ -200,6 +201,7 @@ def apply_commit(
 def generate_and_commit(
     *,
     config: dict | None = None,
+    config_path: str | None = None,
     config_overrides: dict | None = None,
     type: str | None = None,
     scope: str | None = None,
@@ -218,7 +220,7 @@ def generate_and_commit(
         cwd = os.getcwd()
 
     if config is None:
-        cfg = load_config(config_overrides)
+        cfg = load_config(config_path, config_overrides)
     else:
         cfg = config
         if config_overrides:

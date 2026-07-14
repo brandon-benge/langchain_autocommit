@@ -46,6 +46,33 @@ class TestBuildFallbackBody:
         assert "0 file" in body
 
 
+class TestGenerateCommitMessageConfigPath:
+    def test_config_path_passed_to_load_config(self, mocker):
+        """When config is None and config_path is given, it's passed to load_config."""
+        mock_load = mocker.patch("autocommit.core.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.core.changed_files", return_value=[])
+        mocker.patch("autocommit.core.staged_diff_summary")
+        mocker.patch("autocommit.core.ensure_git_repo")
+
+        generate_commit_message(config=None, config_path="/tmp/custom.yaml", cwd="/tmp")
+
+        # load_config should have been called with the config_path as first positional arg
+        assert mock_load.call_args[0][0] == "/tmp/custom.yaml"
+
+    def test_config_path_ignored_when_config_provided(self, mocker):
+        """When config dict is provided, config_path is ignored."""
+        mock_load = mocker.patch("autocommit.core.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.core.changed_files", return_value=[])
+        mocker.patch("autocommit.core.staged_diff_summary")
+        mocker.patch("autocommit.core.ensure_git_repo")
+
+        config_dict = {"custom": "value"}
+        generate_commit_message(config=config_dict, config_path="/tmp/custom.yaml", cwd="/tmp")
+
+        # load_config should NOT have been called (config was provided)
+        mock_load.assert_not_called()
+
+
 class TestGenerateCommitMessageEarlyExit:
     def test_empty_files(self, mocker):
         mocker.patch("autocommit.core.changed_files", return_value=[])

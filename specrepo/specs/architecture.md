@@ -85,9 +85,13 @@ The fallback provider uses `llm.fallback.base_url`, `model`, `temperature`, and
 
 ## Configuration Contract
 
-`load_config(overrides=None)` loads `autocommit/params.yaml`. If overrides are
-provided, it deep-merges nested dictionaries and replaces scalar or non-dict
-values.
+`load_config(config_path=None, overrides=None)` loads `autocommit/params.yaml`
+(the bundled default). When `config_path` is provided, the specified YAML file
+is loaded instead of the bundled default. If overrides are provided, they are
+deep-merged on top of whichever base file was loaded (nested dicts are merged
+recursively; scalar and non-dict values are replaced).
+
+The `--config-file <path>` CLI flag maps to the `config_path` parameter.
 
 Feature work that adds config keys must update:
 

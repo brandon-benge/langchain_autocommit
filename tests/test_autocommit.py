@@ -395,3 +395,52 @@ class TestCliArgs:
             from autocommit.cli import main
             result = main()
             assert result == 0
+
+    def test_config_file_flag_passed_to_load_config(self, mocker):
+        """--config-file <path> is passed as config_path to load_config."""
+        mock_load = mocker.patch("autocommit.cli.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.cli.generate_commit_message",
+                     return_value=MagicMock(subject="test", body="body"))
+        mocker.patch("autocommit.cli.apply_commit")
+        mocker.patch("autocommit.cli.push")
+
+        config_path = "/tmp/custom-config.yaml"
+        with patch.object(sys, "argv", ["autocommit", "-y", "--config-file", config_path]):
+            from autocommit.cli import main
+            result = main()
+            assert result == 0
+            # load_config should have been called with config_path set
+            assert mock_load.call_args.kwargs.get("config_path") == config_path
+
+    def test_config_file_flag_with_overrides(self, mocker):
+        """--config-file combined with override flags: overrides still applied."""
+        mock_load = mocker.patch("autocommit.cli.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.cli.generate_commit_message",
+                     return_value=MagicMock(subject="test", body="body"))
+        mocker.patch("autocommit.cli.apply_commit")
+        mocker.patch("autocommit.cli.push")
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--config-file", "/tmp/cfg.yaml",
+                                         "--model", "custom-model"]):
+            from autocommit.cli import main
+            result = main()
+            assert result == 0
+            # config_path should be set
+            assert mock_load.call_args.kwargs.get("config_path") == "/tmp/cfg.yaml"
+            # overrides should also be populated (llm.primary.model)
+            overrides = mock_load.call_args.kwargs.get("overrides", {})
+            assert overrides.get("llm", {}).get("primary", {}).get("model") == "custom-model"
+
+    def test_config_file_no_flag_uses_default(self, mocker):
+        """When --config-file is absent, config_path should be None in load_config call."""
+        mock_load = mocker.patch("autocommit.cli.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.cli.generate_commit_message",
+                     return_value=MagicMock(subject="test", body="body"))
+        mocker.patch("autocommit.cli.apply_commit")
+        mocker.patch("autocommit.cli.push")
+
+        with patch.object(sys, "argv", ["autocommit", "-y"]):
+            from autocommit.cli import main
+            result = main()
+            assert result == 0
+            assert mock_load.call_args.kwargs.get("config_path") is None

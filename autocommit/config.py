@@ -26,8 +26,9 @@ def deep_merge(base: dict, overrides: dict) -> dict:
     return result
 
 
-def load_config(overrides: dict | None = None) -> dict:
-    cfg = _load_file(_resolve_path())
+def load_config(config_path: str | None = None, overrides: dict | None = None) -> dict:
+    path = config_path if config_path else _resolve_path()
+    cfg = _load_file(path)
     if overrides:
         cfg = deep_merge(cfg, overrides)
     return cfg

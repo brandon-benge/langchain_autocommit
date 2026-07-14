@@ -168,13 +168,15 @@ def main(argv=None):
                     help="Override LLM max tokens")
     ap.add_argument("--timeout", type=int, default=None,
                     help="Override LLM timeout in seconds")
+    ap.add_argument("--config-file", type=str, default=None,
+                    help="Path to a custom YAML config file (absolute or relative to cwd)")
     args = ap.parse_args(argv)
 
     config_overrides = _merge_config_overrides(
         _build_llm_overrides(args),
         _build_quality_overrides(args),
     )
-    cfg = load_config(config_overrides)
+    cfg = load_config(config_path=args.config_file, overrides=config_overrides)
     if args.show_config:
         print(json.dumps(cfg, indent=2))
         return 0
