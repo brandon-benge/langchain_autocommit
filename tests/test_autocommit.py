@@ -288,7 +288,7 @@ class TestCliArgs:
         mock_msg = MagicMock(subject="test", body="test body")
         mocker.patch("autocommit.cli.generate_commit_message", return_value=mock_msg)
         mock_apply = mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y"]):
             from autocommit.cli import main
@@ -303,7 +303,7 @@ class TestCliArgs:
         mock_msg = MagicMock(subject="test", body="test body")
         mock_gen = mocker.patch("autocommit.cli.generate_commit_message", return_value=mock_msg)
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y", "-c", "refactored the auth module"]):
             from autocommit.cli import main
@@ -318,7 +318,7 @@ class TestCliArgs:
         mock_msg = MagicMock(subject="test", body="test body")
         mock_gen = mocker.patch("autocommit.cli.generate_commit_message", return_value=mock_msg)
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y", "-t", "docs"]):
             from autocommit.cli import main
@@ -333,7 +333,7 @@ class TestCliArgs:
         mock_msg = MagicMock(subject="test", body="test body")
         mock_gen = mocker.patch("autocommit.cli.generate_commit_message", return_value=mock_msg)
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y", "-s", "auth"]):
             from autocommit.cli import main
@@ -348,7 +348,7 @@ class TestCliArgs:
         mock_msg = MagicMock(subject="test", body="test body")
         mock_gen = mocker.patch("autocommit.cli.generate_commit_message", return_value=mock_msg)
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y", "--ticket", "PROJ-42"]):
             from autocommit.cli import main
@@ -378,7 +378,7 @@ class TestCliArgs:
         mock_msg = MagicMock(subject="a" * 10, body="test body")
         mock_gen = mocker.patch("autocommit.cli.generate_commit_message", return_value=mock_msg)
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y", "--max-subject-length", "10"]):
             from autocommit.cli import main
@@ -402,7 +402,7 @@ class TestCliArgs:
         mocker.patch("autocommit.cli.generate_commit_message",
                      return_value=MagicMock(subject="test", body="body"))
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         config_path = "/tmp/custom-config.yaml"
         with patch.object(sys, "argv", ["autocommit", "-y", "--config-file", config_path]):
@@ -418,7 +418,7 @@ class TestCliArgs:
         mocker.patch("autocommit.cli.generate_commit_message",
                      return_value=MagicMock(subject="test", body="body"))
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y", "--config-file", "/tmp/cfg.yaml",
                                          "--model", "custom-model"]):
@@ -437,7 +437,7 @@ class TestCliArgs:
         mocker.patch("autocommit.cli.generate_commit_message",
                      return_value=MagicMock(subject="test", body="body"))
         mocker.patch("autocommit.cli.apply_commit")
-        mocker.patch("autocommit.cli.push")
+        mocker.patch("autocommit.utils.git_utils.push")
 
         with patch.object(sys, "argv", ["autocommit", "-y"]):
             from autocommit.cli import main

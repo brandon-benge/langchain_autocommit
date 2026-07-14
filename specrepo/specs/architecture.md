@@ -65,8 +65,17 @@ future approved proposal changes that contract.
 `apply_commit` validates that the message has a subject, runs `git commit` with
 the generated subject and body, then optionally pushes.
 
+When pushing (`push_after=True`), the function accepts a
+`push_set_upstream` parameter (default `True`). If the current branch has
+no upstream tracking branch and `push_set_upstream` is `True`, the push
+automatically sets the tracking reference (`git push --set-upstream origin
+<branch>`) before pushing. If `push_set_upstream` is `False` and the
+branch lacks an upstream, the push fails with an error.
+
 `generate_and_commit` composes generation and application. It derives signoff,
-amend, and push behavior from config unless explicit arguments are provided.
+amend, push, and push-set-upstream behavior from config unless explicit
+arguments are provided. The `git.push_set_upstream` config key defaults to
+`true` in the bundled `params.yaml`.
 
 ## LLM Provider Contract
 
@@ -92,6 +101,15 @@ deep-merged on top of whichever base file was loaded (nested dicts are merged
 recursively; scalar and non-dict values are replaced).
 
 The `--config-file <path>` CLI flag maps to the `config_path` parameter.
+
+The following `git` keys control commit-and-push behavior:
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `git.push_after_commit` | `true` | Run `git push` after a successful commit. |
+| `git.push_set_upstream` | `true` | When pushing and the branch has no upstream, automatically set the upstream tracking reference. Ignored when `push_after_commit` is `false`. |
+| `git.signoff` | `true` | Add a `Signed-off-by` trailer to the commit. |
+| `git.allow_amend` | `false` | Allow amending the previous commit instead of creating a new one. |
 
 Feature work that adds config keys must update:
 

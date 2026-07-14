@@ -56,8 +56,16 @@ def commit(cwd: str, subject: str, body: str, signoff: bool=False, amend: bool=F
     if code != 0:
         raise RuntimeError(err)
 
-def push(cwd: str) -> None:
-    code, out, err = _run("git push", cwd)
+def has_upstream(cwd: str) -> bool:
+    code, out, err = _run("git rev-parse --abbrev-ref --symbolic-full-name @{upstream}", cwd)
+    return code == 0
+
+def push(cwd: str, set_upstream: bool = False) -> None:
+    if set_upstream and not has_upstream(cwd):
+        branch = current_branch(cwd)
+        code, out, err = _run(f"git push --set-upstream origin {shlex.quote(branch)}", cwd)
+    else:
+        code, out, err = _run("git push", cwd)
     if code != 0:
         raise RuntimeError(err)
 

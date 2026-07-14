@@ -8,7 +8,6 @@ import sys
 from autocommit.config import load_config
 from autocommit.core import CommitMessage, generate_commit_message, apply_commit
 from autocommit.utils.keychain import set_api_key
-from autocommit.utils.git_utils import push
 
 
 def _bool(v, default=False):
@@ -121,6 +120,10 @@ def main(argv=None):
                     help="Push after commit")
     ap.add_argument("--no-push", action="store_false", dest="push", default=None,
                     help="Do not push after commit")
+    ap.add_argument("--push-set-upstream", action="store_true", dest="push_set_upstream", default=None,
+                    help="Automatically set upstream tracking branch on first push")
+    ap.add_argument("--no-push-set-upstream", action="store_false", dest="push_set_upstream", default=None,
+                    help="Do not automatically set upstream tracking branch")
     ap.add_argument("--signoff", action="store_true", dest="signoff", default=None,
                     help="Add Signed-off-by trailer")
     ap.add_argument("--no-signoff", action="store_false", dest="signoff", default=None,
@@ -236,15 +239,16 @@ def main(argv=None):
 
     signoff = _merge_flag(args.signoff, git_cfg.get("signoff", False))
     amend = _merge_flag(args.amend, git_cfg.get("allow_amend", False))
-    apply_commit(message, cwd=cwd, signoff=signoff, amend=amend)
-    print("Committed.")
+    push_after = _merge_flag(args.push, git_cfg.get("push_after_commit", False))
+    push_set_upstream = _merge_flag(args.push_set_upstream, git_cfg.get("push_set_upstream", True))
 
-    if _merge_flag(args.push, git_cfg.get("push_after_commit", False)):
-        try:
-            push(cwd)
-            print("Pushed.")
-        except Exception as e:
-            print(f"  Push skipped ({e}).")
+    try:
+        apply_commit(message, cwd=cwd, signoff=signoff, amend=amend,
+                     push_after=push_after, push_set_upstream=push_set_upstream)
+        print("Committed." if not push_after else "Committed.\n  Pushed.")
+    except RuntimeError as e:
+        print(f"  Push failed: {e}")
+        return 1
 
     return 0
 

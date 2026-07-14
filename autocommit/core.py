@@ -188,6 +188,7 @@ def apply_commit(
     signoff: bool = False,
     amend: bool = False,
     push_after: bool = False,
+    push_set_upstream: bool = True,
 ) -> None:
     if cwd is None:
         cwd = os.getcwd()
@@ -195,7 +196,7 @@ def apply_commit(
         raise ValueError("No subject in commit message — nothing to commit")
     commit(cwd, message.subject, message.body, signoff=signoff, amend=amend)
     if push_after:
-        push(cwd)
+        push(cwd, set_upstream=push_set_upstream)
 
 
 def generate_and_commit(
@@ -235,6 +236,7 @@ def generate_and_commit(
         amend = _bool(git_cfg.get("allow_amend", False))
     if push_after is None:
         push_after = _bool(git_cfg.get("push_after_commit", False))
+    push_set_upstream = _bool(git_cfg.get("push_set_upstream", True))
 
     message = generate_commit_message(
         config=cfg,
@@ -250,5 +252,6 @@ def generate_and_commit(
         conventional=conventional,
     )
     if message.subject:
-        apply_commit(message, cwd=cwd, signoff=signoff, amend=amend, push_after=push_after)
+        apply_commit(message, cwd=cwd, signoff=signoff, amend=amend,
+                     push_after=push_after, push_set_upstream=push_set_upstream)
     return message

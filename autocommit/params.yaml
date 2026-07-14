@@ -1,41 +1,42 @@
-project_name: "LangChain AutoCommit"
-python_version: "3.10"
+project_name: "LangChain AutoCommit"  # Display name for logs and metadata
+python_version: "3.10"                # Minimum supported Python version
 llm:
   primary:
-    base_url: "https://opencode.ai/zen/go/v1"
-    model: "deepseek-v4-flash"
-    temperature: 0.2
-    max_tokens: 512
-    timeout: 60
-    # keychain:
+    base_url: "https://opencode.ai/zen/go/v1"  # Base URL for the primary LLM API
+    model: "deepseek-v4-flash"                  # Model identifier for the primary LLM
+    temperature: 0.2                            # LLM sampling temperature (0.0–1.0)
+    max_tokens: 512                             # Max tokens in the LLM response
+    timeout: 60                                 # Request timeout in seconds
+    # keychain:                                 # (disabled) Uncomment to use macOS Keychain
     #   service: "langchain_autocommit"
     #   key: "opencode_api_key"
-    env_var: "OPENCODE_API_KEY"    # Alternative: read API key from env var instead of keychain
+    env_var: "OPENCODE_API_KEY"                 # Env var name for API key (alternative to keychain)
 
   fallback:
-    base_url: "http://localhost:11434"
-    model: "qwen3:8b"
-    temperature: 0.2
-    max_tokens: 4096
+    base_url: "http://localhost:11434"   # Base URL for the fallback Ollama API
+    model: "qwen3:8b"                    # Model identifier for the fallback LLM
+    temperature: 0.2                     # LLM sampling temperature (0.0–1.0)
+    max_tokens: 4096                     # Max tokens in the fallback LLM response
 
 git:
-  autostage_all: true
-  signoff: true
-  push_after_commit: true
-  allow_amend: false
-  conventional: true
-  default_type: "chore"
-  scope_from_folder: true
-  max_subject_length: 100
-  max_diff_chars: 8000
-  max_changed_files: 20
-  include_diff_patch: true
-  ticket_regex: '[A-Z]{2,}-\d+'
+  autostage_all: true      # Auto-stage all unstaged files before generating commit
+  signoff: true            # Add Signed-off-by trailer to the commit
+  push_after_commit: true  # Run git push after successful commit
+  push_set_upstream: true  # Auto-set upstream tracking branch when pushing to a new branch
+  allow_amend: false       # Allow amending the previous commit instead of creating a new one
+  conventional: true       # Enforce conventional commit format (type(scope): subject)
+  default_type: "chore"    # Fallback commit type when type cannot be inferred
+  scope_from_folder: true  # Infer commit scope from the current working directory name
+  max_subject_length: 100  # Max characters for the commit subject line
+  max_diff_chars: 8000     # Max characters of staged diff sent to the LLM
+  max_changed_files: 20    # Max changed files to include in the LLM context
+  include_diff_patch: true # Include the full diff patch in the LLM prompt
+  ticket_regex: '[A-Z]{2,}-\d+'  # Regex pattern to extract ticket ID from branch name
   quality:
-    max_retries: 2
-    min_body_lines: 3
-    check_boilerplate: true
+    max_retries: 2       # Max quality-check retries when the draft fails validation
+    min_body_lines: 3    # Min body lines required for the quality check to pass
+    check_boilerplate: true  # Reject boilerplate or generic commit bodies
 
 paths:
-  logs_dir: "logs"
-  temp_dir: "tmp"
+  logs_dir: "logs"  # Directory for log output (relative to project root)
+  temp_dir: "tmp"   # Directory for temporary files (relative to project root)
