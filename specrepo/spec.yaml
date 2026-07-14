@@ -1,10 +1,9 @@
-schema_version: 1
 name: langchain-autocommit-specrepo
 project:
   name: LangChain AutoCommit
   package: autocommit
   language: python
-  min_python: "3.10"
+  min_version: "3.10"
   description: >
     Agentic Git automation library and CLI that generates conventional commit
     messages from staged Git diffs using a primary OpenAI-compatible provider
@@ -17,36 +16,168 @@ baseline_specs:
   product: specrepo/specs/product.md
   architecture: specrepo/specs/architecture.md
   quality: specrepo/specs/quality.md
+  glossary: specrepo/specs/glossary.md
 workflow:
   request_inbox: specrepo/requests
   proposal_dir: specrepo/proposals
   approved_dir: specrepo/approved
   implementation_review_dir: specrepo/implementation-reviews
   states:
-    - requested
-    - architecture_proposed
-    - awaiting_approval
-    - approved
-    - implementation_reviewed
-    - implementing
-    - verified
-    - closed
+    - name: requested
+      entry_gates: []
+      exit_gates: [request_file_exists]
+      artifacts_required: []
+    - name: architecture_proposed
+      entry_gates: [request_file_exists, current_specs_read]
+      exit_gates: [approved_architecture_exists]
+      artifacts_required:
+        - "specrepo/proposals/*/architecture.md"
+    - name: approved
+      entry_gates: [approved_architecture_exists]
+      exit_gates: [implementation_review_exists]
+      artifacts_required:
+        - "specrepo/approved/*/approval.md"
+    - name: implementation_reviewed
+      entry_gates:
+        [approved_architecture_exists, implementation_review_exists, test_plan_exists]
+      exit_gates: []
+      artifacts_required:
+        - "specrepo/implementation-reviews/*.md"
+    - name: implementing
+      entry_gates:
+        [approved_architecture_exists, implementation_review_exists, test_plan_exists]
+      exit_gates: []
+      artifacts_required: []
+    - name: verified
+      entry_gates: [tests_run_or_exception_recorded]
+      exit_gates: [specs_updated_if_behavior_changed]
+      artifacts_required: []
+    - name: closed
+      entry_gates: [specs_updated_if_behavior_changed]
+      exit_gates: []
+      artifacts_required: []
 required_gates:
-  before_architecture_update:
-    - request_file_exists
-    - current_specs_read
-  before_implementation:
-    - approved_architecture_exists
-    - implementation_review_exists
-    - test_plan_exists
-  before_close:
-    - tests_run_or_exception_recorded
-    - specs_updated_if_behavior_changed
+  request_file_exists:
+    description: >
+      At least one feature-request file must exist in the request inbox before
+      architecture work begins.
+    check:
+      type: file_exists
+      pattern: "specrepo/requests/*.md"
+    spec_ref: workflow.md §Request Intake
+  current_specs_read:
+    description: >
+      All baseline specs (product, architecture, quality, glossary) must exist
+      and have been read by the spec-reviewer agent before architecture review.
+    check:
+      type: files_exist
+      pattern:
+        - specrepo/specs/product.md
+        - specrepo/specs/architecture.md
+        - specrepo/specs/quality.md
+        - specrepo/specs/glossary.md
+    spec_ref: workflow.md §Architecture Proposal
+  approved_architecture_exists:
+    description: >
+      An approval record must exist under specrepo/approved/ before
+      implementation can begin.
+    check:
+      type: glob_exists
+      pattern: "specrepo/approved/*/approval.md"
+    spec_ref: workflow.md §Automatic Approval
+  implementation_review_exists:
+    description: >
+      An implementation review must exist confirming the approved architecture
+      is implementable.
+    check:
+      type: glob_exists
+      pattern: "specrepo/implementation-reviews/*.md"
+    spec_ref: workflow.md §Coding-Agent Architecture Review
+  test_plan_exists:
+    description: >
+      The approved architecture proposal or implementation review must contain
+      a test plan section.
+    check:
+      type: section_exists_in_files
+      pattern:
+        - "specrepo/proposals/*/architecture.md"
+        - "specrepo/implementation-reviews/*.md"
+      section_heading: "## Test Plan"
+    spec_ref: quality.md §Test Strategy
+  tests_run_or_exception_recorded:
+    description: >
+      Either the default verification command has been run and passed, or a
+      recorded exception explains why it could not run.
+    check:
+      type: command_run_or_exception
+      command_ref: commands.test
+      exception_file_pattern: "specrepo/implementation-reviews/*.md"
+    spec_ref: quality.md §Test Strategy
+  specs_updated_if_behavior_changed:
+    description: >
+      If the implementation changed user-visible behavior, the baseline specs
+      must have been updated to match.
+    check:
+      type: git_diff_or_spec_statement
+    spec_ref: quality.md §Documentation Rules
 commands:
   test: pytest
-  package_metadata: pyproject.toml
-  default_config: autocommit/params.yaml
-agent_policy:
-  spec_reviewer_may_edit_code: false
-  coding_agent_must_review_approved_architecture: true
-  implementation_requires_human_approval: true
+
+agent_handoffs:
+  - id: request_to_spec
+    from: request-author
+    to: spec-reviewer
+    automation: auto
+  - id: spec_to_approver
+    from: spec-reviewer
+    to: architecture-approver
+    automation: auto
+  - id: approver_to_human
+    from: architecture-approver
+    to: human
+    automation: human_decision
+    instruction: >
+      Review the approval recommendation (approve / revise / reject).
+      If approved, call @spec-coder with the approval record to start
+      implementation. If revise/reject, refine the request and re-run.
+  - id: human_to_coder
+    from: human
+    to: spec-coder
+    automation: manual
+    instruction: Human invokes @spec-coder with the approval record to
+      begin implementation.
+  - id: coder_to_impl_reviewer
+    from: spec-coder
+    to: implementation-reviewer
+    automation: auto
+    condition: No implementation review exists yet
+  - id: impl_reviewer_to_coder
+    from: implementation-reviewer
+    to: spec-coder
+    automation: auto
+    condition: Review decision is "Proceed"
+  - id: impl_reviewer_to_human
+    from: implementation-reviewer
+    to: human
+    automation: human_decision
+    instruction: >
+      Review decision is "Stop for revised architecture". The
+      approved proposal is not implementable. Revise the architecture
+      proposal or abandon the change.
+  - id: coder_to_test_reviewer
+    from: spec-coder
+    to: test-reviewer
+    automation: auto
+    condition: All required verification passes
+  - id: test_reviewer_to_coder
+    from: test-reviewer
+    to: spec-coder
+    automation: auto
+    condition: Recommendation is "pass" or "needs more tests"
+  - id: test_reviewer_to_human
+    from: test-reviewer
+    to: human
+    automation: human_decision
+    instruction: >
+      Test review recommendation is "blocked". Review the blocking
+      issues and decide how to proceed.

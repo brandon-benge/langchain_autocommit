@@ -16,14 +16,14 @@ New in v2: installable **Python library** with a clean programmatic API, deep-me
 | `autocommit/core.py` | Core library — commit message generation and application |
 | `autocommit/config.py` | Config loader with deep-merge override support |
 | `autocommit/cli.py` | Optional CLI entrypoint |
-| `autocommit/chains/commit_chain.py` | LangChain pipeline using `PromptTemplate` + chat model |
+| `autocommit/chains/commit_chain.py` | LangGraph StateGraph with three specialized agents (diff analyzer, message writer, quality checker) and automatic quality-loop retries |
 | `autocommit/utils/git_utils.py` | Lightweight Git wrapper using subprocess |
 | `autocommit/utils/llm_provider.py` | LLM provider resolution with automatic fallback |
 | `autocommit/utils/keychain.py` | macOS Keychain wrapper; env var also supported |
 | `autocommit/params.yaml` | Bundled default configuration |
 | `pyproject.toml` | Package metadata and dependencies |
 | `run_venv.sh` | Development setup script — creates a `.venv`, installs deps, and builds the package |
-| `tests/` | pytest suite (54 tests) |
+| `tests/` | pytest suite (138 tests) |
 
 ---
 
@@ -111,12 +111,13 @@ msg = generate_and_commit(
 
 ### Config Overrides
 
-The bundled `autocommit/params.yaml` is the default baseline. You can override any part of it with a dict that gets deep-merged:
+The bundled `autocommit/params.yaml` is the default baseline. You can override any part of it with a dict that gets deep-merged, or point to a completely different YAML file:
 
 ```python
 from autocommit import load_config, generate_commit_message
 
-cfg = load_config(overrides={
+# Use a custom config file instead of the bundled params.yaml
+cfg = load_config(config_path="./project-config.yaml", overrides={
     "llm": {
         "primary": {"model": "deepseek-v4-pro"},
     },
@@ -143,6 +144,7 @@ msg = generate_commit_message(
 def generate_commit_message(
     *,
     config: dict | None = None,
+    config_path: str | None = None,
     config_overrides: dict | None = None,
     type: str | None = None,
     scope: str | None = None,
@@ -171,6 +173,7 @@ def apply_commit(
     signoff: bool = False,
     amend: bool = False,
     push_after: bool = False,
+    push_set_upstream: bool = True,
 ) -> None
 ```
 
@@ -180,6 +183,7 @@ def apply_commit(
 def generate_and_commit(
     *,
     config: dict | None = None,
+    config_path: str | None = None,
     config_overrides: dict | None = None,
     type: str | None = None,
     scope: str | None = None,
@@ -203,65 +207,86 @@ def generate_and_commit(
 Bundled with the package. All runtime defaults live here.
 
 ```yaml
-project_name: "LangChain AutoCommit"
-python_version: "3.10"
+project_name: "LangChain AutoCommit"  # Display name for logs and metadata
+python_version: "3.10"                # Minimum supported Python version
 llm:
   primary:
-    base_url: "https://opencode.ai/zen/go/v1"
-    model: "deepseek-v4-flash"
-    temperature: 0.2
-    max_tokens: 512
-    timeout: 60
-    # keychain:
+    base_url: "https://opencode.ai/zen/go/v1"  # Base URL for the primary LLM API
+    model: "deepseek-v4-flash"                  # Model identifier for the primary LLM
+    temperature: 0.2                            # LLM sampling temperature (0.0–1.0)
+    max_tokens: 512                             # Max tokens in the LLM response
+    timeout: 60                                 # Request timeout in seconds
+    # keychain:                                 # (disabled) Uncomment to use macOS Keychain
     #   service: "langchain_autocommit"
     #   key: "opencode_api_key"
-    env_var: "OPENCODE_API_KEY"
+    env_var: "OPENCODE_API_KEY"                 # Env var name for API key (alternative to keychain)
 
   fallback:
-    base_url: "http://localhost:11434"
-    model: "qwen3:8b"
-    temperature: 0.2
-    max_tokens: 4096
+    base_url: "http://localhost:11434"   # Base URL for the fallback Ollama API
+    model: "qwen3:8b"                    # Model identifier for the fallback LLM
+    temperature: 0.2                     # LLM sampling temperature (0.0–1.0)
+    max_tokens: 4096                     # Max tokens in the fallback LLM response
 
 git:
-  autostage_all: true
-  signoff: true
-  push_after_commit: true
-  allow_amend: false
-  conventional: true
-  default_type: "chore"
-  scope_from_folder: true
-  max_subject_length: 100
-  max_diff_chars: 8000        # Max chars of actual diff patch sent to LLM
-  max_changed_files: 20       # Max files listed in the prompt
-  include_diff_patch: true    # Include actual patch content in LLM input
-  ticket_regex: '[A-Z]{2,}-\d+'
+  autostage_all: true      # Auto-stage all unstaged files before generating commit
+  signoff: true            # Add Signed-off-by trailer to the commit
+  push_after_commit: true  # Run git push after successful commit
+  push_set_upstream: true  # Auto-set upstream tracking branch when pushing to a new branch
+  allow_amend: false       # Allow amending the previous commit instead of creating a new one
+  conventional: true       # Enforce conventional commit format (type(scope): subject)
+  default_type: "chore"    # Fallback commit type when type cannot be inferred
+  scope_from_folder: true  # Infer commit scope from the current working directory name
+  max_subject_length: 100  # Max characters for the commit subject line
+  max_diff_chars: 8000     # Max characters of staged diff sent to the LLM
+  max_changed_files: 20    # Max changed files to include in the LLM context
+  include_diff_patch: true # Include the full diff patch in the LLM prompt
+  ticket_regex: '[A-Z]{2,}-\d+'  # Regex pattern to extract ticket ID from branch name
+  quality:
+    max_retries: 2       # Max quality-check retries when the draft fails validation
+    min_body_lines: 3    # Min body lines required for the quality check to pass
+    check_boilerplate: true  # Reject boilerplate or generic commit bodies
 
 paths:
-  logs_dir: "logs"
-  temp_dir: "tmp"
+  logs_dir: "logs"  # Directory for log output (relative to project root)
+  temp_dir: "tmp"   # Directory for temporary files (relative to project root)
 ```
 
 ### Notable Fields
 
 | Section | Key | Meaning |
 |----------|-----|---------|
+| **project** | `project_name` | Display name for logs and metadata |
+|  | `python_version` | Minimum supported Python version |
 | **llm.primary** | `base_url` | API endpoint (e.g. `https://opencode.ai/zen/go/v1`) |
 |  | `model` | Model name, e.g. `deepseek-v4-flash`, `deepseek-v4-pro` |
+|  | `temperature` | LLM sampling temperature (0.0–1.0) |
+|  | `max_tokens` | Max tokens in the LLM response |
 |  | `timeout` | Seconds before triggering fallback |
 |  | `keychain.service` | macOS Keychain service name for API key lookup |
 |  | `keychain.key` | macOS Keychain key name for API key lookup |
 |  | `env_var` | Name of env var to read API key from (alternative to keychain; cannot use both) |
 | **llm.fallback** | `base_url` | Ollama endpoint (default `http://localhost:11434`) |
 |  | `model` | Model name, e.g. `qwen3:8b` |
-|  | `temperature` | Sampling temperature (lower = more deterministic) |
-| **git** | `autostage_all` | If true, automatically stages all changes |
-|  | `conventional` | Enforces `<type>(<scope>): <subject>` style |
-|  | `ticket_regex` | Extracts ticket ID from branch name |
-|  | `max_subject_length` | Clamps subject length to a safe limit |
-|  | `max_diff_chars` | Max characters of the actual diff patch sent to the LLM (0 = unlimited) |
+|  | `temperature` | LLM sampling temperature (0.0–1.0) |
+|  | `max_tokens` | Max tokens in the fallback LLM response |
+| **git** | `autostage_all` | If true, automatically stages all changes before generating commit |
+|  | `signoff` | If true, add Signed-off-by trailer to the commit |
+|  | `push_after_commit` | If true, run `git push` after successful commit |
+|  | `push_set_upstream` | If true, auto-set upstream tracking branch when no upstream exists |
+|  | `allow_amend` | If true, allow amending previous commit instead of creating a new one |
+|  | `conventional` | If true, enforce `<type>(<scope>): <subject>` format |
+|  | `default_type` | Fallback commit type when type cannot be inferred from file paths |
+|  | `scope_from_folder` | If true, infer commit scope from the current working directory name |
+|  | `max_subject_length` | Clamps subject length to this character limit |
+|  | `max_diff_chars` | Max characters of the staged diff sent to the LLM (0 = unlimited) |
 |  | `max_changed_files` | Max file names listed in the prompt |
 |  | `include_diff_patch` | Whether to include the full diff patch in addition to the stat summary |
+|  | `ticket_regex` | Regex pattern to extract ticket ID from branch name |
+| **git.quality** | `max_retries` | Max quality-check retries when the draft fails validation |
+|  | `min_body_lines` | Min body lines required for the quality check to pass |
+|  | `check_boilerplate` | If true, reject boilerplate or generic commit bodies |
+| **paths** | `logs_dir` | Directory for log output (relative to project root) |
+|  | `temp_dir` | Directory for temporary files (relative to project root) |
 
 ---
 
@@ -286,8 +311,11 @@ The utility prioritizes **factual accuracy** by sending the LLM a rich view of t
 1. **Git data collection** — The staged diff is collected in three forms: `--name-status` (what files changed and how), `--stat` (line counts per file), and the **full diff patch** (actual code changes with `+`/`-` lines).
 2. **Metadata inference** — Commit type, scope, and ticket ID are inferred from file paths, folder name, and branch name.
 3. **Controlled truncation** — If the diff patch is too large, it's truncated to `max_diff_chars` characters (default 8000). A warning is injected into the prompt so the LLM knows its view is incomplete.
-4. **Structured output** — The LLM returns JSON parsed via `JsonOutputParser` — no fragile regex fallback.
-5. **Graceful fallback** — If the LLM fails or returns unparseable output, a heuristics-based body is generated listing the changed files.
+4. **LangGraph state graph** — A compiled `StateGraph` runs three specialized agents in sequence:
+   - **Diff analyzer** — Runs `analyze_type` and `analyze_scope` LLM sub-tasks concurrently on the full diff.
+   - **Message writer** — Consumes the structured analysis plus the raw diff to produce a draft `CommitMessage`.
+   - **Quality checker** — Runs deterministic rules on the draft. If checks fail and the retry budget (`git.quality.max_retries`, default 2) is not exhausted, routes back to the message writer with a critique.
+5. **Graceful fallback** — If all LLM agents fail or return unparseable output, a heuristics-based body is generated listing the changed files.
 
 ### Data Flow
 
@@ -300,14 +328,17 @@ flowchart TD
     E --> F["Inject truncation warning if needed"]
     F --> G["resolve_llm()"]
     G --> H{"opencode.ai API"}
-    H -->|"success"| I["JsonOutputParser"]
+    H -->|"success"| I["Build LangGraph StateGraph"]
     H -->|"any failure"| J["Fallback: ChatOllama (local)"]
     J --> I
-    I --> K{"Parsed OK?"}
-    K -->|"yes"| L["CommitMessage returned"]
-    K -->|"no"| M["Heuristics fallback body"]
-    M --> L
-    L --> N["apply_commit() → git commit/push"]
+    I --> K["Diff analyzer agent<br/>(parallel type + scope analysis)"]
+    K --> L["Message writer agent"]
+    L --> M{"Quality checker"}
+    M -->|"passes"| N["CommitMessage returned"]
+    M -->|"fails, retries remaining"| L
+    M -->|"fails, no retries left"| O["Heuristics fallback body"]
+    O --> N
+    N --> P["apply_commit() → git commit/push"]
 ```
 
 ---
@@ -355,8 +386,19 @@ autocommit --keychain --keychain-service "myapp" --keychain-key "prod_key"
 The CLI is available as a secondary entry point:
 
 ```bash
-pip install git+https://github.com/brandon-benge/langchain_autocommit.git
 autocommit --autostage
+```
+
+Pass `-y` to skip the confirmation prompt:
+
+```bash
+autocommit -y --context "Refactored auth middleware"
+```
+
+Override config at runtime:
+
+```bash
+autocommit --model deepseek-v4-pro --config-file ./project-config.yaml --push-set-upstream
 ```
 
 ### CLI Flags
@@ -374,20 +416,26 @@ autocommit --autostage
 | `--autostage` / `--no-autostage` | Enable/disable auto-staging |
 | `--amend` / `--no-amend` | Enable/disable amending |
 | `--push` / `--no-push` | Enable/disable push after commit |
+| `--push-set-upstream` / `--no-push-set-upstream` | Enable/disable automatic upstream tracking branch setup |
 | `--signoff` / `--no-signoff` | Enable/disable Signed-off-by |
 | `--conventional` / `--no-conventional` | Enable/disable conventional format |
+| | **Quality loop** |
+| `--quality-max-retries N` | Override max quality-loop retries (`git.quality.max_retries`) |
+| `--min-body-lines N` | Override min body lines for quality check (`git.quality.min_body_lines`) |
+| `--check-boilerplate` / `--no-check-boilerplate` | Enable/disable boilerplate detection in quality check |
 | | **Runtime** |
 | `--dry-run` | Show proposed commit without applying |
 | `-y, --yes` | Skip confirmation prompt |
 | `--show-config` | Print parsed config and exit |
 | `--setup-key` | Store API key in macOS Keychain |
+| `--config-file PATH` | Path to a custom YAML config file (overrides bundled `params.yaml`) |
 | | **LLM overrides** |
 | `--keychain` / `--no-keychain` | Enable/disable API key lookup from macOS Keychain |
 | `--keychain-service TEXT` | Keychain service name (default: `langchain_autocommit`) |
 | `--keychain-key TEXT` | Keychain key name (default: `opencode_api_key`) |
+| `--keychain` and `--env-var` are mutually exclusive; enabling one auto-disables the other |
 | `--env-var` / `--no-env-var` | Enable/disable API key lookup from env var |
 | `--env-var-name TEXT` | Environment variable name (default: `OPENCODE_API_KEY`) |
-| `--keychain` and `--env-var` are mutually exclusive; enabling one auto-disables the other |
 | `--base-url TEXT` | Override LLM base URL |
 | `--model TEXT` | Override LLM model name |
 | `--temperature FLOAT` | Override LLM temperature |
@@ -410,23 +458,30 @@ python -m pytest --cov-report=term-missing
 
 ---
 
-## LangChain Design Pattern
+## LangGraph Design Pattern
 
-The chain in `autocommit/chains/commit_chain.py` is provider-agnostic:
+The graph in `autocommit/chains/commit_chain.py` is a **LangGraph `StateGraph`** that orchestrates multiple specialized agents and a quality loop:
 
 ```python
-chain = (
-    RunnableMap({
-        "type": lambda x: x.get("type"),
-        "scope": lambda x: x.get("scope"),
-        ...
-    })
-    | PromptTemplate.from_template(COMMIT_PROMPT)
-    | llm  # Any LangChain chat model
+graph = StateGraph(GraphState)
+
+graph.add_node("analyze_diff", analyze_diff)
+graph.add_node("write_message", write_message)
+graph.add_node("check_quality", check_quality)
+
+graph.set_entry_point("analyze_diff")
+graph.add_edge("analyze_diff", "write_message")
+graph.add_conditional_edges(
+    "check_quality",
+    should_retry,  # routes back to write_message or to END
 )
+graph.add_edge("write_message", "check_quality")
 ```
 
-This keeps the project fully **LangChain-native**, using `RunnableMap` for variable injection, `PromptTemplate` for input templating, and a configurable LLM resolved at runtime.
+Key features:
+- **Parallel sub-tasks** — `analyze_diff` runs type inference and scope inference concurrently via `invoke()` on each sub-agent.
+- **Quality loop** — `check_quality` evaluates the draft deterministically. On failure with retries remaining, the graph routes back to `write_message` with a critique in the state.
+- **Provider agnostic** — The graph accepts any LangChain chat model; primary and fallback LLMs are resolved before graph construction.
 
 ---
 
@@ -438,7 +493,8 @@ This keeps the project fully **LangChain-native**, using `RunnableMap` for varia
 | **Deep-Merge Overrides** | Programmatic config overrides merge recursively |
 | **Secure Key Storage** | API key from env var or macOS Keychain |
 | **Automatic Fallback** | Primary API failure → local Ollama |
-| **Provider Agnostic** | Chain accepts any LangChain chat model |
+| **Provider Agnostic** | Graph accepts any LangChain chat model |
+| **Configurable Quality Loop** | LangGraph `StateGraph` with retry budget, min body lines, and boilerplate detection |
 | **Library-First** | Clean Python API as the primary interface |
 
 ---
