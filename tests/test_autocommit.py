@@ -1,8 +1,10 @@
 import argparse
+import json
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from autocommit.cli import _build_llm_overrides, _build_quality_overrides, _merge_config_overrides
 from autocommit.core import CommitMessage, _bool
@@ -444,6 +446,22 @@ class TestCliArgs:
             result = main()
             assert result == 0
             assert mock_load.call_args.kwargs.get("config_path") is None
+
+    def test_config_file_overrides_autocommit_params(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """--config-file wins over AUTOCOMMIT_PARAMS in the real config loader."""
+        env_file = tmp_path / "environment.yaml"
+        explicit_file = tmp_path / "explicit.yaml"
+        env_file.write_text(yaml.safe_dump({"source": "environment"}))
+        explicit_file.write_text(yaml.safe_dump({"source": "explicit"}))
+        monkeypatch.setenv("AUTOCOMMIT_PARAMS", str(env_file))
+
+        from autocommit.cli import main
+        result = main(["--show-config", "--config-file", str(explicit_file)])
+
+        assert result == 0
+        assert json.loads(capsys.readouterr().out) == {"source": "explicit"}
 
 
 class TestCliAutoPRFlags:

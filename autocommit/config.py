@@ -27,6 +27,8 @@ def deep_merge(base: dict, overrides: dict) -> dict:
 
 
 def load_config(config_path: str | None = None, overrides: dict | None = None) -> dict:
+    if config_path is None:
+        config_path = os.environ.get("AUTOCOMMIT_PARAMS")
     path = config_path if config_path else _resolve_path()
     cfg = _load_file(path)
     if overrides:
@@ -34,4 +36,4 @@ def load_config(config_path: str | None = None, overrides: dict | None = None) -
     return cfg
 
 
-DEFAULT_CONFIG = load_config()
+DEFAULT_CONFIG = _load_file(_resolve_path())

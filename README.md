@@ -113,7 +113,26 @@ msg = generate_and_commit(
 
 ### Config Overrides
 
-The bundled `autocommit/params.yaml` is the default baseline. You can override any part of it with a dict that gets deep-merged, or point to a completely different YAML file:
+Configuration files are selected in this order:
+
+1. An explicit Python `config_path` or CLI `--config-file`.
+2. A non-empty `AUTOCOMMIT_PARAMS` environment variable.
+3. The bundled `autocommit/params.yaml` default.
+
+Set a persistent custom config path without repeating `--config-file`:
+
+```bash
+export AUTOCOMMIT_PARAMS="$HOME/.config/autocommit/params.yaml"
+autocommit --dry-run
+```
+
+An explicit `config_path` or `--config-file` always overrides
+`AUTOCOMMIT_PARAMS`. A selected custom YAML file replaces the bundled base; it
+is not merged with the bundled file. Dictionary and CLI overrides are then
+deep-merged on top of the selected file.
+
+You can override any part of the selected config with a dict that gets
+deep-merged, or point to a completely different YAML file:
 
 ```python
 from autocommit import load_config, generate_commit_message
@@ -493,7 +512,7 @@ autocommit --model deepseek-v4-pro --config-file ./project-config.yaml --push-se
 | `-y, --yes` | Skip confirmation prompt |
 | `--show-config` | Print parsed config and exit |
 | `--setup-key` | Store API key in macOS Keychain |
-| `--config-file PATH` | Path to a custom YAML config file (overrides bundled `params.yaml`) |
+| `--config-file PATH` | Path to a custom YAML config file (overrides `AUTOCOMMIT_PARAMS` and bundled `params.yaml`) |
 | | **LLM overrides** |
 | `--keychain` / `--no-keychain` | Enable/disable API key lookup from macOS Keychain |
 | `--keychain-service TEXT` | Keychain service name (default: `langchain_autocommit`) |

@@ -18,7 +18,7 @@ runtime defaults.
 | --- | --- |
 | `autocommit/__init__.py` | Defines the package public API exports. |
 | `autocommit/core.py` | Coordinates config loading, Git inspection, LLM generation, fallback commit body creation, and commit application. |
-| `autocommit/config.py` | Loads bundled YAML config and deep-merges caller overrides without mutating the base config. |
+| `autocommit/config.py` | Resolves explicit, environment-selected, or bundled YAML config and deep-merges caller overrides without mutating the base config. |
 | `autocommit/cli.py` | Parses CLI flags, translates them into config overrides and core API calls, prompts before committing unless skipped. |
 | `autocommit/chains/commit_chain.py` | Builds the LangGraph `StateGraph` with three specialized agents (diff analyzer, message writer, quality checker), parallel diff analysis, and quality-loop routing. Exports `build_graph(llm, fallback_llm, config)`. |
 | `autocommit/utils/git_utils.py` | Wraps Git subprocess calls and provides path-based commit type, scope, and ticket helpers. |
@@ -104,11 +104,26 @@ The fallback provider uses `llm.fallback.base_url`, `model`, `temperature`, and
 
 ## Configuration Contract
 
-`load_config(config_path=None, overrides=None)` loads `autocommit/params.yaml`
-(the bundled default). When `config_path` is provided, the specified YAML file
-is loaded instead of the bundled default. If overrides are provided, they are
-deep-merged on top of whichever base file was loaded (nested dicts are merged
-recursively; scalar and non-dict values are replaced).
+`load_config(config_path=None, overrides=None)` resolves the base YAML path in
+this priority order:
+
+1. An explicit `config_path`, supplied by the Python API or `--config-file`.
+2. A non-empty `AUTOCOMMIT_PARAMS` environment variable when `config_path` is
+   `None`.
+3. Bundled `autocommit/params.yaml` when neither higher-priority source selects
+   a file.
+
+A custom file replaces the bundled base; it is not implicitly merged with the
+bundled YAML. If overrides are provided, they are deep-merged on top of the
+selected base file (nested dicts are merged recursively; scalar and non-dict
+values are replaced). Missing files and malformed YAML selected through the
+environment propagate the same errors as an explicit custom path.
+
+The exported `DEFAULT_CONFIG` is always initialized directly from the bundled
+file. It is deterministic and does not read `AUTOCOMMIT_PARAMS` at import time;
+runtime `load_config()` calls perform environment-aware selection. This keeps
+package import independent of ambient configuration and ensures an explicit
+`--config-file` can override an invalid environment value.
 
 The `--config-file <path>` CLI flag maps to the `config_path` parameter.
 

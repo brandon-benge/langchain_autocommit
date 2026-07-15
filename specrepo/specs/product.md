@@ -24,8 +24,10 @@ optional CLI.
 - Run through CLI flags or the Python API.
 - Automatically create a pull request against a configurable target branch
   after commit and push (requires optional ``PyGithub`` or ``python-gitlab``).
-- Configure LLM and Git behavior through bundled defaults plus deep-merge
-  overrides.
+- Configure LLM and Git behavior through bundled defaults, a persistent custom
+  YAML path selected by `AUTOCOMMIT_PARAMS`, an explicit `--config-file` or
+  Python `config_path`, and deep-merge overrides. Explicit paths take priority
+  over the environment, which takes priority over the bundled file.
 
 ## Public API
 

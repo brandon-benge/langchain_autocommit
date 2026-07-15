@@ -1,8 +1,14 @@
 import os
 import tempfile
 
+import pytest
 import yaml
 from autocommit.config import load_config
+
+
+@pytest.fixture(autouse=True)
+def _ignore_ambient_config_path(monkeypatch):
+    monkeypatch.delenv("AUTOCOMMIT_PARAMS", raising=False)
 
 
 def test_load_config_returns_dict():
