@@ -156,9 +156,7 @@ class TestCreatePR:
         """RuntimeError raised when PyGithub not installed."""
         mock_run.return_value = (0, "git@github.com:owner/repo.git", "")
 
-        # Remove the fake github module so the import inside create_pr fails
-        saved = sys.modules.pop("github", None)
-        try:
+        with patch.dict(sys.modules, {"github": None}):
             with pytest.raises(RuntimeError, match="PyGithub is required"):
                 create_pr(
                     repo_path="/fake/path",
@@ -167,18 +165,13 @@ class TestCreatePR:
                     base_branch="main",
                     title="test",
                 )
-        finally:
-            if saved is not None:
-                sys.modules["github"] = saved
 
     @patch("autocommit.utils.pr_utils._run")
     def test_gitlab_library_missing(self, mock_run):
         """RuntimeError raised when python-gitlab not installed."""
         mock_run.return_value = (0, "git@gitlab.com:owner/repo.git", "")
 
-        # Remove the fake gitlab module so the import inside create_pr fails
-        saved = sys.modules.pop("gitlab", None)
-        try:
+        with patch.dict(sys.modules, {"gitlab": None}):
             with pytest.raises(RuntimeError, match="python-gitlab is required"):
                 create_pr(
                     repo_path="/fake/path",
@@ -187,9 +180,6 @@ class TestCreatePR:
                     base_branch="main",
                     title="test",
                 )
-        finally:
-            if saved is not None:
-                sys.modules["gitlab"] = saved
 
     @patch("autocommit.utils.pr_utils._run")
     def test_missing_origin_remote(self, mock_run):
