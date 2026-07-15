@@ -405,3 +405,196 @@ class TestGenerateAndCommitAutoPR:
             title="feat: integrated PR",
             body="body",
         )
+
+
+class TestApplyCommitAutoMerge:
+    """Tests for apply_commit with auto-merge enabled."""
+
+    def _make_msg(self, subject="feat: add feature", body="Some body"):
+        return CommitMessage(subject=subject, body=body)
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_merge_calls_create_pr_and_auto_merge(
+        self, mock_branch, mock_push, mock_commit
+    ):
+        """apply_commit calls create_pr_and_auto_merge when auto_merge=True."""
+        mock_branch.return_value = "feature-xyz"
+        events = []
+        mock_push.side_effect = lambda *args, **kwargs: events.append("push")
+
+        with patch("autocommit.utils.pr_token.resolve_pr_token", return_value="ghp_token"):
+            with patch(
+                "autocommit.utils.pr_utils.create_pr_and_auto_merge",
+                side_effect=lambda **kwargs: (
+                    events.append("create_pr_and_auto_merge")
+                    or "https://github.com/o/r/pull/1"
+                ),
+            ) as mock_auto_merge:
+                with patch(
+                    "autocommit.utils.pr_utils.create_pr",
+                    side_effect=lambda **kwargs: (
+                        events.append("create_pr")
+                        or "https://github.com/o/r/pull/99"
+                    ),
+                ) as mock_create:
+                    url = apply_commit(
+                        self._make_msg(),
+                        cwd="/tmp",
+                        push_after=True,
+                        auto_pr_enabled=True,
+                        auto_pr_target_branch="main",
+                        auto_pr_auto_merge=True,
+                        _config={"git": {"auto_pr": {"enabled": True, "auto_merge": True}}},
+                    )
+
+        assert url == "https://github.com/o/r/pull/1"
+        assert events == ["push", "create_pr_and_auto_merge"]
+        mock_auto_merge.assert_called_once_with(
+            repo_path="/tmp",
+            token="ghp_token",
+            head_branch="feature-xyz",
+            base_branch="main",
+            title="feat: add feature",
+            body="Some body",
+            auto_merge=True,
+            merge_method="merge",
+        )
+        mock_create.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_merge_disabled_calls_plain_create_pr(
+        self, mock_branch, mock_push, mock_commit
+    ):
+        """auto_merge=False calls create_pr (backward compat)."""
+        mock_branch.return_value = "feature-xyz"
+        events = []
+        mock_push.side_effect = lambda *args, **kwargs: events.append("push")
+
+        with patch("autocommit.utils.pr_token.resolve_pr_token", return_value="ghp_token"):
+            with patch(
+                "autocommit.utils.pr_utils.create_pr_and_auto_merge",
+            ) as mock_auto_merge:
+                with patch(
+                    "autocommit.utils.pr_utils.create_pr",
+                    side_effect=lambda **kwargs: (
+                        events.append("create_pr")
+                        or "https://github.com/o/r/pull/1"
+                    ),
+                ) as mock_create:
+                    url = apply_commit(
+                        self._make_msg(),
+                        cwd="/tmp",
+                        push_after=True,
+                        auto_pr_enabled=True,
+                        auto_pr_target_branch="main",
+                        auto_pr_auto_merge=False,
+                        _config={"git": {"auto_pr": {"enabled": True}}},
+                    )
+
+        assert url == "https://github.com/o/r/pull/1"
+        assert events == ["push", "create_pr"]
+        mock_create.assert_called_once()
+        mock_auto_merge.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_merge_defaults_not_enabled(
+        self, mock_branch, mock_push, mock_commit, monkeypatch
+    ):
+        """Default (no auto_merge kwarg) calls create_pr (not auto-merge)."""
+        mock_branch.return_value = "feature-xyz"
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+        with patch("autocommit.utils.pr_utils.create_pr_and_auto_merge") as mock_auto_merge:
+            with patch("autocommit.utils.pr_utils.create_pr", return_value="url") as mock_create:
+                url = apply_commit(
+                    self._make_msg(),
+                    cwd="/tmp",
+                    push_after=True,
+                    auto_pr_enabled=True,
+                    auto_pr_target_branch="main",
+                    _config={"git": {"auto_pr": {"enabled": True}}},
+                )
+
+        assert url == "url"
+        mock_create.assert_called_once()
+        mock_auto_merge.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_merge_skipped_when_same_branch(
+        self, mock_branch, mock_push, mock_commit, caplog
+    ):
+        """Same-branch skip takes priority over auto-merge."""
+        mock_branch.return_value = "main"
+        with patch("autocommit.utils.pr_utils.create_pr") as mock_create:
+            with patch("autocommit.utils.pr_utils.create_pr_and_auto_merge") as mock_auto_merge:
+                with caplog.at_level("INFO", logger="autocommit.core"):
+                    url = apply_commit(
+                        self._make_msg(),
+                        cwd="/tmp",
+                        push_after=True,
+                        auto_pr_enabled=True,
+                        auto_pr_target_branch="main",
+                        auto_pr_auto_merge=True,
+                        _config={"git": {"auto_pr": {"enabled": True}}},
+                    )
+
+        assert url is None
+        mock_create.assert_not_called()
+        mock_auto_merge.assert_not_called()
+        assert "matches target branch" in caplog.text
+
+
+class TestGenerateAndCommitAutoMerge:
+    """Tests for generate_and_commit with auto-merge config."""
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch", return_value="feature-xyz")
+    @patch(
+        "autocommit.core.generate_commit_message",
+        return_value=CommitMessage("feat: auto-merge", "body"),
+    )
+    def test_configured_auto_merge_runs_through_workflow(
+        self, mock_generate, mock_branch, mock_push, mock_commit, monkeypatch
+    ):
+        """generate_and_commit reads auto_merge config and passes to apply_commit."""
+        cfg = {
+            "llm": {},
+            "git": {
+                "push_after_commit": True,
+                "push_set_upstream": True,
+                "auto_pr": {
+                    "enabled": True,
+                    "target_branch": "main",
+                    "token_env_var": "GITHUB_TOKEN",
+                    "auto_merge": True,
+                    "merge_method": "squash",
+                    "merge_timeout": 300,
+                },
+            },
+        }
+        monkeypatch.setenv("GITHUB_TOKEN", "auto-merge-token")
+        with patch(
+            "autocommit.utils.pr_utils.create_pr_and_auto_merge",
+            return_value="https://github.com/o/r/pull/42",
+        ) as mock_auto_merge:
+            message = generate_and_commit(config=cfg, cwd="/tmp")
+
+        assert message == CommitMessage("feat: auto-merge", "body")
+        mock_auto_merge.assert_called_once_with(
+            repo_path="/tmp",
+            token="auto-merge-token",
+            head_branch="feature-xyz",
+            base_branch="main",
+            title="feat: auto-merge",
+            body="body",
+            auto_merge=True,
+            merge_method="squash",
+        )

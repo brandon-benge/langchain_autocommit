@@ -44,6 +44,9 @@ git:
     # keychain:               # (disabled) Uncomment to use macOS Keychain
     #   service: "langchain_autocommit"
     #   key: "github_token"
+    auto_merge: false        # Enable auto-merge on the created PR (native provider API)
+    merge_method: merge      # Merge method for auto-merge: merge, squash, or rebase
+    merge_timeout: 600       # Max seconds to wait for checks (reserved for future sync mode)
 
 paths:
   logs_dir: "logs"  # Directory for log output (relative to project root)

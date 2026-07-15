@@ -135,6 +135,17 @@ def main(argv=None):
                     help="Title for auto-created PR (default: commit subject)")
     ap.add_argument("--auto-pr-body", type=str, default=None,
                     help="Body for auto-created PR (default: commit body)")
+    ap.add_argument("--auto-pr-auto-merge", action="store_true",
+                    dest="auto_pr_auto_merge", default=None,
+                    help="Enable auto-merge on the created PR")
+    ap.add_argument("--no-auto-pr-auto-merge", action="store_false",
+                    dest="auto_pr_auto_merge", default=None,
+                    help="Disable auto-merge on the created PR")
+    ap.add_argument("--auto-pr-merge-method", type=str, default=None,
+                    choices=["merge", "squash", "rebase"],
+                    help="Merge method for auto-merge (merge, squash, rebase)")
+    ap.add_argument("--auto-pr-merge-timeout", type=int, default=None,
+                    help="Max seconds to wait for checks (default: 600)")
 
     ap.add_argument("--signoff", action="store_true", dest="signoff", default=None,
                     help="Add Signed-off-by trailer")
@@ -255,6 +266,18 @@ def main(argv=None):
     push_set_upstream = _merge_flag(args.push_set_upstream, git_cfg.get("push_set_upstream", True))
     auto_pr_enabled = _merge_flag(args.auto_pr, git_cfg.get("auto_pr", {}).get("enabled", False))
     auto_pr_target_branch = args.auto_pr_target_branch or git_cfg.get("auto_pr", {}).get("target_branch", "main")
+    auto_pr_auto_merge = _merge_flag(
+        args.auto_pr_auto_merge,
+        git_cfg.get("auto_pr", {}).get("auto_merge", False),
+    )
+    auto_pr_merge_method = (
+        args.auto_pr_merge_method
+        or git_cfg.get("auto_pr", {}).get("merge_method", "merge")
+    )
+    auto_pr_merge_timeout = (
+        args.auto_pr_merge_timeout
+        or int(git_cfg.get("auto_pr", {}).get("merge_timeout", 600))
+    )
 
     try:
         pr_url = apply_commit(
@@ -264,13 +287,19 @@ def main(argv=None):
             auto_pr_target_branch=auto_pr_target_branch,
             auto_pr_title=args.auto_pr_title,
             auto_pr_body=args.auto_pr_body,
+            auto_pr_auto_merge=auto_pr_auto_merge,
+            auto_pr_merge_method=auto_pr_merge_method,
+            auto_pr_merge_timeout=auto_pr_merge_timeout,
             _config=cfg,
         )
         msg = "Committed."
         if push_after:
             msg += "\n  Pushed."
         if pr_url:
-            msg += f"\n  PR created: {pr_url}"
+            if auto_pr_auto_merge:
+                msg += f"\n  PR created with auto-merge enabled: {pr_url}"
+            else:
+                msg += f"\n  PR created: {pr_url}"
         print(msg)
     except RuntimeError as e:
         print(f"  Error: {e}")

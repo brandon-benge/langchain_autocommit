@@ -47,7 +47,8 @@ architecture proposal.
 ## Non-Goals
 
 - It is not a general Git porcelain replacement.
-- It does not manage branches, merge pull requests, close pull requests, or
-  manage releases. PR creation is supported only as an optional post-push step.
+- It does not manage branches, close pull requests, or manage releases.
+  PR creation and auto-merge are supported only as optional post-push
+  steps.
 - It does not guarantee LLM availability.
 - It does not require network access when the fallback local model is available.

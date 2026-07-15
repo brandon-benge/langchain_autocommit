@@ -24,7 +24,7 @@ runtime defaults.
 | `autocommit/utils/git_utils.py` | Wraps Git subprocess calls and provides path-based commit type, scope, and ticket helpers. |
 | `autocommit/utils/llm_provider.py` | Resolves primary OpenAI-compatible model access and local Ollama fallback. |
 | `autocommit/utils/keychain.py` | Reads and writes API keys through the local keyring backend. |
-| `autocommit/utils/pr_utils.py` | PR creation with provider detection (GitHub via PyGithub, GitLab via python-gitlab). |
+| `autocommit/utils/pr_utils.py` | PR creation with provider detection (GitHub via PyGithub, GitLab via python-gitlab). Auto-merge via native provider APIs (``enable_auto_merge``, ``merge_when_pipeline_succeeds``). |
 | `autocommit/utils/pr_token.py` | PR API token resolution via environment variable or macOS Keychain. |
 
 ## Commit Message Generation Flow
@@ -82,6 +82,15 @@ macOS Keychain, and uses the appropriate Python library (``PyGithub`` /
 body default to the commit message and can be overridden via keyword arguments.
 The PR URL is returned from ``apply_commit`` (``str | None``).
 
+When `git.auto_pr.auto_merge` is also `true`, `apply_commit` calls
+``create_pr_and_auto_merge`` instead of ``create_pr``. This function creates
+the PR and then enables the hosting provider's native auto-merge mechanism
+(GitHub: ``enable_auto_merge``, GitLab: ``merge_when_pipeline_succeeds``).
+The merge method (merge commit, squash, or rebase) is controlled by
+``git.auto_pr.merge_method``. The tool returns immediately after enabling
+auto-merge; the provider merges the PR asynchronously once all required
+status checks pass.
+
 `generate_and_commit` composes generation and application. It derives signoff,
 amend, push, push-set-upstream, and auto-PR behavior from config unless
 explicit arguments are provided. The `git.push_set_upstream` config key
@@ -138,6 +147,9 @@ The following `git` keys control commit-and-push behavior:
 | `git.auto_pr.enabled` | `false` | Enable automatic PR creation after a successful commit and push. |
 | `git.auto_pr.target_branch` | `"main"` | Target branch for the auto-created pull request. |
 | `git.auto_pr.token_env_var` | `"GITHUB_TOKEN"` | Environment variable name containing the PR API token. |
+| `git.auto_pr.auto_merge` | `false` | Enable automatic PR merge via the provider's native auto-merge API after PR creation. |
+| `git.auto_pr.merge_method` | `"merge"` | Merge method for auto-merge (``"merge"``, ``"squash"``, or ``"rebase"``). |
+| `git.auto_pr.merge_timeout` | `600` | Max seconds to wait for checks (reserved for future synchronous poll+merge mode; unused by native auto-merge). |
 
 Feature work that adds config keys must update:
 
