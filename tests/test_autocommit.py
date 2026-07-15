@@ -602,3 +602,121 @@ class TestCliAutoPRFlags:
         assert result == 0
         assert mock_create.call_args.kwargs["token"] == "cli-configured-token"
         assert "PR created: https://github.com/o/r/pull/99" in capsys.readouterr().out
+
+
+class TestCliAutoMergeFlags:
+    """Tests for auto-merge CLI flags."""
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_auto_merge_flag_enables(
+        self, mock_load, mock_generate, mock_apply
+    ):
+        """--auto-pr-auto-merge flag enables auto-merge."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+        mock_apply.return_value = "https://github.com/o/r/pull/1"
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--push", "--auto-pr",
+                                         "--auto-pr-auto-merge"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_auto_merge"] is True
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_no_auto_pr_auto_merge_flag_disables(
+        self, mock_load, mock_generate, mock_apply
+    ):
+        """--no-auto-pr-auto-merge flag disables auto-merge even when config says true."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main",
+                                "auto_merge": True}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--no-auto-pr-auto-merge"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_auto_merge"] is False
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_merge_method_override(
+        self, mock_load, mock_generate, mock_apply
+    ):
+        """--auto-pr-merge-method overrides config value."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main",
+                                "merge_method": "merge"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+
+        with patch.object(sys, "argv", ["autocommit", "-y",
+                                         "--auto-pr-merge-method", "squash"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_merge_method"] == "squash"
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_merge_timeout_override(
+        self, mock_load, mock_generate, mock_apply
+    ):
+        """--auto-pr-merge-timeout overrides config value."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main",
+                                "merge_timeout": 600}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+
+        with patch.object(sys, "argv", ["autocommit", "-y",
+                                         "--auto-pr-merge-timeout", "300"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_merge_timeout"] == 300
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_auto_merge_prints_message(
+        self, mock_load, mock_generate, mock_apply, capsys
+    ):
+        """CLI output includes 'auto-merge enabled' when flag is set."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+        mock_apply.return_value = "https://github.com/o/r/pull/42"
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--push", "--auto-pr",
+                                         "--auto-pr-auto-merge"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "PR created with auto-merge enabled: https://github.com/o/r/pull/42" in captured.out

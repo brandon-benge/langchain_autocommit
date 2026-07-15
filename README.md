@@ -25,7 +25,7 @@ New in v2: installable **Python library** with a clean programmatic API, deep-me
 | `autocommit/params.yaml` | Bundled default configuration |
 | `pyproject.toml` | Package metadata and dependencies |
 | `run_venv.sh` | Development setup script — creates a `.venv`, installs deps, and builds the package |
-| `tests/` | pytest suite (183 tests) |
+| `tests/` | pytest suite |
 
 ---
 
@@ -233,104 +233,18 @@ def generate_and_commit(
 
 ---
 
-## Configuration: `params.yaml`
+## Configuration
 
-Bundled with the package. All runtime defaults live here.
+All runtime defaults are defined in the bundled
+[`autocommit/params.yaml`](autocommit/params.yaml). This single file is the
+source of truth for every configurable parameter — LLM provider settings,
+Git behavior, quality-loop controls, auto-PR options, and more. Commented
+descriptions explain each field inline.
 
-```yaml
-project_name: "LangChain AutoCommit"  # Display name for logs and metadata
-python_version: "3.10"                # Minimum supported Python version
-llm:
-  primary:
-    base_url: "https://opencode.ai/zen/go/v1"  # Base URL for the primary LLM API
-    model: "deepseek-v4-flash"                  # Model identifier for the primary LLM
-    temperature: 0.2                            # LLM sampling temperature (0.0–1.0)
-    max_tokens: 512                             # Max tokens in the LLM response
-    timeout: 60                                 # Request timeout in seconds
-    # keychain:                                 # (disabled) Uncomment to use macOS Keychain
-    #   service: "langchain_autocommit"
-    #   key: "opencode_api_key"
-    env_var: "OPENCODE_API_KEY"                 # Env var name for API key (alternative to keychain)
-
-  fallback:
-    base_url: "http://localhost:11434"   # Base URL for the fallback Ollama API
-    model: "qwen3:8b"                    # Model identifier for the fallback LLM
-    temperature: 0.2                     # LLM sampling temperature (0.0–1.0)
-    max_tokens: 4096                     # Max tokens in the fallback LLM response
-
-git:
-  autostage_all: true      # Auto-stage all unstaged files before generating commit
-  signoff: true            # Add Signed-off-by trailer to the commit
-  push_after_commit: true  # Run git push after successful commit
-  push_set_upstream: true  # Auto-set upstream tracking branch when pushing to a new branch
-  allow_amend: false       # Allow amending the previous commit instead of creating a new one
-  conventional: true       # Enforce conventional commit format (type(scope): subject)
-  default_type: "chore"    # Fallback commit type when type cannot be inferred
-  scope_from_folder: true  # Infer commit scope from the current working directory name
-  max_subject_length: 100  # Max characters for the commit subject line
-  max_diff_chars: 8000     # Max characters of staged diff sent to the LLM
-  max_changed_files: 20    # Max changed files to include in the LLM context
-  include_diff_patch: true # Include the full diff patch in the LLM prompt
-  ticket_regex: '[A-Z]{2,}-\d+'  # Regex pattern to extract ticket ID from branch name
-  quality:
-    max_retries: 2       # Max quality-check retries when the draft fails validation
-    min_body_lines: 3    # Min body lines required for the quality check to pass
-    check_boilerplate: true  # Reject boilerplate or generic commit bodies
-
-  auto_pr:
-    enabled: false           # Create a PR after a successful push
-    target_branch: main      # Base branch for the PR
-    token_env_var: GITHUB_TOKEN
-    # keychain:
-    #   service: langchain_autocommit
-    #   key: github_token
-
-paths:
-  logs_dir: "logs"  # Directory for log output (relative to project root)
-  temp_dir: "tmp"   # Directory for temporary files (relative to project root)
-```
-
-### Notable Fields
-
-| Section | Key | Meaning |
-|----------|-----|---------|
-| **project** | `project_name` | Display name for logs and metadata |
-|  | `python_version` | Minimum supported Python version |
-| **llm.primary** | `base_url` | API endpoint (e.g. `https://opencode.ai/zen/go/v1`) |
-|  | `model` | Model name, e.g. `deepseek-v4-flash`, `deepseek-v4-pro` |
-|  | `temperature` | LLM sampling temperature (0.0–1.0) |
-|  | `max_tokens` | Max tokens in the LLM response |
-|  | `timeout` | Seconds before triggering fallback |
-|  | `keychain.service` | macOS Keychain service name for API key lookup |
-|  | `keychain.key` | macOS Keychain key name for API key lookup |
-|  | `env_var` | Name of env var to read API key from (alternative to keychain; cannot use both) |
-| **llm.fallback** | `base_url` | Ollama endpoint (default `http://localhost:11434`) |
-|  | `model` | Model name, e.g. `qwen3:8b` |
-|  | `temperature` | LLM sampling temperature (0.0–1.0) |
-|  | `max_tokens` | Max tokens in the fallback LLM response |
-| **git** | `autostage_all` | If true, automatically stages all changes before generating commit |
-|  | `signoff` | If true, add Signed-off-by trailer to the commit |
-|  | `push_after_commit` | If true, run `git push` after successful commit |
-|  | `push_set_upstream` | If true, auto-set upstream tracking branch when no upstream exists |
-|  | `allow_amend` | If true, allow amending previous commit instead of creating a new one |
-|  | `conventional` | If true, enforce `<type>(<scope>): <subject>` format |
-|  | `default_type` | Fallback commit type when type cannot be inferred from file paths |
-|  | `scope_from_folder` | If true, infer commit scope from the current working directory name |
-|  | `max_subject_length` | Clamps subject length to this character limit |
-|  | `max_diff_chars` | Max characters of the staged diff sent to the LLM (0 = unlimited) |
-|  | `max_changed_files` | Max file names listed in the prompt |
-|  | `include_diff_patch` | Whether to include the full diff patch in addition to the stat summary |
-|  | `ticket_regex` | Regex pattern to extract ticket ID from branch name |
-| **git.quality** | `max_retries` | Max quality-check retries when the draft fails validation |
-|  | `min_body_lines` | Min body lines required for the quality check to pass |
-|  | `check_boilerplate` | If true, reject boilerplate or generic commit bodies |
-| **git.auto_pr** | `enabled` | If true, create a PR after a successful push |
-|  | `target_branch` | Base branch for the created PR (default `main`) |
-|  | `token_env_var` | Environment variable containing the provider API token (default `GITHUB_TOKEN`) |
-|  | `keychain.service` | Optional macOS Keychain service for the provider token |
-|  | `keychain.key` | Optional macOS Keychain key for the provider token |
-| **paths** | `logs_dir` | Directory for log output (relative to project root) |
-|  | `temp_dir` | Directory for temporary files (relative to project root) |
+Overrides are applied via the deep-merge mechanism described in
+[Config Overrides](#config-overrides). Explicit API parameters,
+CLI flags, and `config_overrides` dicts take precedence over the YAML
+defaults.
 
 ---
 

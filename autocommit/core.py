@@ -197,6 +197,9 @@ def apply_commit(
     auto_pr_target_branch: str | None = None,
     auto_pr_title: str | None = None,
     auto_pr_body: str | None = None,
+    auto_pr_auto_merge: bool | None = None,
+    auto_pr_merge_method: str | None = None,
+    auto_pr_merge_timeout: int | None = None,
     # Internal: config dict for PR token resolution.
     # Passed by generate_and_commit; public callers can omit.
     _config: dict | None = None,
@@ -225,6 +228,12 @@ def apply_commit(
         Override PR title (default: commit subject).
     auto_pr_body : str or None
         Override PR body (default: commit body).
+    auto_pr_auto_merge : bool or None
+        Override for ``git.auto_pr.auto_merge``.
+    auto_pr_merge_method : str or None
+        Override for ``git.auto_pr.merge_method``.
+    auto_pr_merge_timeout : int or None
+        Override for ``git.auto_pr.merge_timeout``.
 
     Returns
     -------
@@ -270,15 +279,36 @@ def apply_commit(
         token = resolve_pr_token(_resolved_cfg)
         pr_title = auto_pr_title or message.subject
         pr_body = auto_pr_body or message.body
-        from autocommit.utils.pr_utils import create_pr
-        url = create_pr(
-            repo_path=cwd,
-            token=token,
-            head_branch=branch,
-            base_branch=target,
-            title=pr_title,
-            body=pr_body,
+        _auto_merge = (
+            auto_pr_auto_merge
+            if auto_pr_auto_merge is not None
+            else _bool(_auto_pr_cfg.get("auto_merge", False))
         )
+        _merge_method = (
+            auto_pr_merge_method
+            or _auto_pr_cfg.get("merge_method", "merge")
+        )
+        from autocommit.utils.pr_utils import create_pr, create_pr_and_auto_merge
+        if _auto_merge:
+            url = create_pr_and_auto_merge(
+                repo_path=cwd,
+                token=token,
+                head_branch=branch,
+                base_branch=target,
+                title=pr_title,
+                body=pr_body,
+                auto_merge=True,
+                merge_method=_merge_method,
+            )
+        else:
+            url = create_pr(
+                repo_path=cwd,
+                token=token,
+                head_branch=branch,
+                base_branch=target,
+                title=pr_title,
+                body=pr_body,
+            )
         return url
 
     return None
@@ -325,6 +355,9 @@ def generate_and_commit(
     auto_pr_cfg = git_cfg.get("auto_pr", {})
     auto_pr_enabled = _bool(auto_pr_cfg.get("enabled", False))
     auto_pr_target_branch = str(auto_pr_cfg.get("target_branch", "main"))
+    auto_pr_auto_merge = _bool(auto_pr_cfg.get("auto_merge", False))
+    auto_pr_merge_method = str(auto_pr_cfg.get("merge_method", "merge"))
+    auto_pr_merge_timeout = int(auto_pr_cfg.get("merge_timeout", 600))
 
     message = generate_commit_message(
         config=cfg,
@@ -345,6 +378,9 @@ def generate_and_commit(
             push_after=push_after, push_set_upstream=push_set_upstream,
             auto_pr_enabled=auto_pr_enabled,
             auto_pr_target_branch=auto_pr_target_branch,
+            auto_pr_auto_merge=auto_pr_auto_merge,
+            auto_pr_merge_method=auto_pr_merge_method,
+            auto_pr_merge_timeout=auto_pr_merge_timeout,
             _config=cfg,
         )
     return message
