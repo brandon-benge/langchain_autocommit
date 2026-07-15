@@ -349,6 +349,17 @@ class TestApplyCommitAutoPR:
     ):
         """Direct apply_commit use resolves GITHUB_TOKEN via bundled config."""
         monkeypatch.setenv("GITHUB_TOKEN", "public-api-token")
+        # Pass explicit _config to isolate from any AUTOCOMMIT_PARAMS env var
+        # that might override bundled defaults.
+        _test_cfg = {
+            "git": {
+                "auto_pr": {
+                    "enabled": True,
+                    "target_branch": "main",
+                    "token_env_var": "GITHUB_TOKEN",
+                },
+            },
+        }
         with patch(
             "autocommit.utils.pr_utils.create_pr",
             return_value="https://github.com/o/r/pull/7",
@@ -358,6 +369,7 @@ class TestApplyCommitAutoPR:
                 cwd="/tmp",
                 push_after=True,
                 auto_pr_enabled=True,
+                _config=_test_cfg,
             )
 
         assert url == "https://github.com/o/r/pull/7"
