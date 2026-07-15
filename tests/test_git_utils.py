@@ -14,7 +14,9 @@ from autocommit.utils.git_utils import (
     find_ticket,
     infer_scope_from_cwd,
     infer_type_from_paths,
+    parse_remote_repo,
     push,
+    remote_host,
     staged_diff_summary,
 )
 
@@ -150,3 +152,56 @@ class TestFindTicket:
     def test_custom_pattern(self):
         ticket = find_ticket("fix/ISSUE-42", r"ISSUE-\d+")
         assert ticket == "ISSUE-42"
+
+
+class TestParseRemoteRepo:
+    def test_ssh_format(self, temp_git_repo):
+        """Parse SSH-style remote URL."""
+        import subprocess
+        remote_url = "git@github.com:my-org/my-repo.git"
+        subprocess.run(
+            ["git", "remote", "add", "origin", remote_url],
+            cwd=temp_git_repo, capture_output=True,
+        )
+        owner, repo = parse_remote_repo(temp_git_repo)
+        assert owner == "my-org"
+        assert repo == "my-repo"
+
+    def test_https_format(self, temp_git_repo):
+        """Parse HTTPS-style remote URL."""
+        import subprocess
+        remote_url = "https://github.com/my-org/my-repo.git"
+        subprocess.run(
+            ["git", "remote", "add", "origin", remote_url],
+            cwd=temp_git_repo, capture_output=True,
+        )
+        owner, repo = parse_remote_repo(temp_git_repo)
+        assert owner == "my-org"
+        assert repo == "my-repo"
+
+    def test_missing_origin_raises(self, temp_git_repo):
+        """Raises RuntimeError when origin remote is missing."""
+        with pytest.raises(RuntimeError, match="Cannot get remote origin URL"):
+            parse_remote_repo(temp_git_repo)
+
+
+class TestRemoteHost:
+    def test_github(self, temp_git_repo):
+        import subprocess
+        subprocess.run(
+            ["git", "remote", "add", "origin", "git@github.com:owner/repo.git"],
+            cwd=temp_git_repo, capture_output=True,
+        )
+        assert remote_host(temp_git_repo) == "github.com"
+
+    def test_gitlab(self, temp_git_repo):
+        import subprocess
+        subprocess.run(
+            ["git", "remote", "add", "origin", "git@gitlab.com:owner/repo.git"],
+            cwd=temp_git_repo, capture_output=True,
+        )
+        assert remote_host(temp_git_repo) == "gitlab.com"
+
+    def test_missing_origin_raises(self, temp_git_repo):
+        with pytest.raises(RuntimeError, match="Cannot get remote origin URL"):
+            remote_host(temp_git_repo)

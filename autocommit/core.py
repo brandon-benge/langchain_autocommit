@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import NamedTuple
 
@@ -16,6 +17,9 @@ from autocommit.utils.git_utils import (
     push,
     staged_diff_summary,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class CommitMessage(NamedTuple):
@@ -189,7 +193,44 @@ def apply_commit(
     amend: bool = False,
     push_after: bool = False,
     push_set_upstream: bool = True,
-) -> None:
+    auto_pr_enabled: bool | None = None,
+    auto_pr_target_branch: str | None = None,
+    auto_pr_title: str | None = None,
+    auto_pr_body: str | None = None,
+    # Internal: config dict for PR token resolution.
+    # Passed by generate_and_commit; public callers can omit.
+    _config: dict | None = None,
+) -> str | None:
+    """Apply a commit message and optionally push and create a PR.
+
+    Parameters
+    ----------
+    message : CommitMessage
+        The commit message to apply.
+    cwd : str or None
+        Working directory (default: current working directory).
+    signoff : bool
+        Add Signed-off-by trailer.
+    amend : bool
+        Amend the previous commit instead of creating a new one.
+    push_after : bool
+        Push after committing.
+    push_set_upstream : bool
+        Automatically set upstream tracking branch on first push.
+    auto_pr_enabled : bool or None
+        Override for ``git.auto_pr.enabled``.
+    auto_pr_target_branch : str or None
+        Override for ``git.auto_pr.target_branch``.
+    auto_pr_title : str or None
+        Override PR title (default: commit subject).
+    auto_pr_body : str or None
+        Override PR body (default: commit body).
+
+    Returns
+    -------
+    str or None
+        The PR URL if a PR was created, otherwise ``None``.
+    """
     if cwd is None:
         cwd = os.getcwd()
     if not message.subject:
@@ -197,6 +238,50 @@ def apply_commit(
     commit(cwd, message.subject, message.body, signoff=signoff, amend=amend)
     if push_after:
         push(cwd, set_upstream=push_set_upstream)
+
+    # Resolve the bundled config for direct public callers. Internal callers
+    # pass their already-loaded config so custom token/keychain settings and
+    # runtime overrides are preserved.
+    _resolved_cfg = _config
+    if _resolved_cfg is None and auto_pr_enabled is not False:
+        _resolved_cfg = load_config()
+    if _resolved_cfg is None:
+        _resolved_cfg = {}
+    _auto_pr_cfg = _resolved_cfg.get("git", {}).get("auto_pr", {})
+    _enabled = (
+        auto_pr_enabled
+        if auto_pr_enabled is not None
+        else _bool(_auto_pr_cfg.get("enabled", False))
+    )
+    # A PR is strictly a post-push action. A failed push raises above, so
+    # reaching this block also proves that the requested push succeeded.
+    if _enabled and push_after:
+        branch = current_branch(cwd)
+        target = auto_pr_target_branch or _auto_pr_cfg.get("target_branch", "main")
+        if branch == target:
+            logger.info(
+                "Skipping automatic PR creation because current branch %r "
+                "matches target branch %r.",
+                branch,
+                target,
+            )
+            return None
+        from autocommit.utils.pr_token import resolve_pr_token
+        token = resolve_pr_token(_resolved_cfg)
+        pr_title = auto_pr_title or message.subject
+        pr_body = auto_pr_body or message.body
+        from autocommit.utils.pr_utils import create_pr
+        url = create_pr(
+            repo_path=cwd,
+            token=token,
+            head_branch=branch,
+            base_branch=target,
+            title=pr_title,
+            body=pr_body,
+        )
+        return url
+
+    return None
 
 
 def generate_and_commit(
@@ -237,6 +322,9 @@ def generate_and_commit(
     if push_after is None:
         push_after = _bool(git_cfg.get("push_after_commit", False))
     push_set_upstream = _bool(git_cfg.get("push_set_upstream", True))
+    auto_pr_cfg = git_cfg.get("auto_pr", {})
+    auto_pr_enabled = _bool(auto_pr_cfg.get("enabled", False))
+    auto_pr_target_branch = str(auto_pr_cfg.get("target_branch", "main"))
 
     message = generate_commit_message(
         config=cfg,
@@ -252,6 +340,11 @@ def generate_and_commit(
         conventional=conventional,
     )
     if message.subject:
-        apply_commit(message, cwd=cwd, signoff=signoff, amend=amend,
-                     push_after=push_after, push_set_upstream=push_set_upstream)
+        apply_commit(
+            message, cwd=cwd, signoff=signoff, amend=amend,
+            push_after=push_after, push_set_upstream=push_set_upstream,
+            auto_pr_enabled=auto_pr_enabled,
+            auto_pr_target_branch=auto_pr_target_branch,
+            _config=cfg,
+        )
     return message

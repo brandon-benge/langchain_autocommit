@@ -3,7 +3,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from autocommit.core import CommitMessage, _build_fallback_body, _bool, generate_commit_message
+from autocommit.core import (
+    CommitMessage,
+    _build_fallback_body,
+    _bool,
+    apply_commit,
+    generate_and_commit,
+    generate_commit_message,
+)
 
 
 class TestBoolHelper:
@@ -175,3 +182,226 @@ class TestGenerateCommitMessageSubjectTruncation:
         self._setup_mocks(mocker, graph_result={"draft_subject": long_subject, "draft_body": "body"})
         msg = generate_commit_message(cwd="/tmp", max_subject_length=30)
         assert len(msg.subject) <= 30
+
+
+class TestApplyCommitAutoPR:
+    def _make_msg(self, subject="feat: add feature", body="Some body"):
+        return CommitMessage(subject=subject, body=body)
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_pr_creates_pr(self, mock_branch, mock_push, mock_commit):
+        """apply_commit calls create_pr when auto_pr_enabled=True."""
+        mock_branch.return_value = "feature-xyz"
+        events = []
+        mock_push.side_effect = lambda *args, **kwargs: events.append("push")
+        # Patch at the actual module paths since imports are lazy (inside function)
+        with patch("autocommit.utils.pr_token.resolve_pr_token", return_value="ghp_token"):
+            with patch("autocommit.utils.pr_utils.create_pr",
+                       side_effect=lambda **kwargs: (
+                           events.append("create_pr")
+                           or "https://github.com/o/r/pull/1"
+                       )) as mock_create:
+                url = apply_commit(
+                    self._make_msg(),
+                    cwd="/tmp",
+                    push_after=True,
+                    auto_pr_enabled=True,
+                    auto_pr_target_branch="main",
+                    _config={"git": {"auto_pr": {"enabled": True}}},
+                )
+        assert url == "https://github.com/o/r/pull/1"
+        assert events == ["push", "create_pr"]
+        mock_create.assert_called_once_with(
+            repo_path="/tmp",
+            token="ghp_token",
+            head_branch="feature-xyz",
+            base_branch="main",
+            title="feat: add feature",
+            body="Some body",
+        )
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_pr_same_branch_skips(
+        self, mock_branch, mock_push, mock_commit, caplog
+    ):
+        """No PR when current branch equals target branch."""
+        mock_branch.return_value = "main"
+        with caplog.at_level("INFO", logger="autocommit.core"):
+            with patch("autocommit.utils.pr_utils.create_pr") as mock_create:
+                url = apply_commit(
+                    self._make_msg(),
+                    cwd="/tmp",
+                    push_after=True,
+                    auto_pr_enabled=True,
+                    auto_pr_target_branch="main",
+                )
+        assert url is None
+        mock_create.assert_not_called()
+        assert "matches target branch" in caplog.text
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    def test_auto_pr_disabled(self, mock_push, mock_commit):
+        """No PR when auto_pr_enabled is False."""
+        with patch("autocommit.utils.pr_utils.create_pr") as mock_create:
+            url = apply_commit(
+                self._make_msg(),
+                cwd="/tmp",
+                auto_pr_enabled=False,
+            )
+        assert url is None
+        mock_create.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_pr_returns_none_when_disabled(self, mock_branch, mock_push, mock_commit):
+        """Returns None when auto_pr_enabled is True but same branch."""
+        mock_branch.return_value = "main"
+        url = apply_commit(
+            self._make_msg(),
+            cwd="/tmp",
+            push_after=True,
+            auto_pr_enabled=True,
+            auto_pr_target_branch="main",
+        )
+        assert url is None
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_pr_defaults_not_enabled(self, mock_branch, mock_push, mock_commit):
+        """Default behavior (no kwargs) does not create PRs."""
+        mock_branch.return_value = "feature-xyz"
+        with patch("autocommit.utils.pr_utils.create_pr") as mock_create:
+            url = apply_commit(self._make_msg(), cwd="/tmp")
+        assert url is None
+        mock_create.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_pr_custom_title_body(self, mock_branch, mock_push, mock_commit):
+        """auto_pr_title and auto_pr_body override commit message."""
+        mock_branch.return_value = "feature-xyz"
+        with patch("autocommit.utils.pr_token.resolve_pr_token", return_value="token"):
+            with patch("autocommit.utils.pr_utils.create_pr", return_value="url") as mock_create:
+                apply_commit(
+                    self._make_msg(subject="ignored", body="ignored"),
+                    cwd="/tmp",
+                    push_after=True,
+                    auto_pr_enabled=True,
+                    auto_pr_target_branch="main",
+                    auto_pr_title="Custom Title",
+                    auto_pr_body="Custom Body",
+                    _config={"git": {"auto_pr": {"enabled": True}}},
+                )
+        mock_create.assert_called_once()
+        assert mock_create.call_args[1]["title"] == "Custom Title"
+        assert mock_create.call_args[1]["body"] == "Custom Body"
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch")
+    def test_auto_pr_requires_push(self, mock_branch, mock_push, mock_commit):
+        """Enabling auto-PR without a push never attempts PR creation."""
+        mock_branch.return_value = "feature-xyz"
+        with patch("autocommit.utils.pr_token.resolve_pr_token") as mock_token:
+            with patch("autocommit.utils.pr_utils.create_pr") as mock_create:
+                url = apply_commit(
+                    self._make_msg(),
+                    cwd="/tmp",
+                    push_after=False,
+                    auto_pr_enabled=True,
+                )
+
+        assert url is None
+        mock_push.assert_not_called()
+        mock_token.assert_not_called()
+        mock_create.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push", side_effect=RuntimeError("push failed"))
+    def test_auto_pr_not_attempted_after_failed_push(self, mock_push, mock_commit):
+        """A failed push aborts before token resolution or PR creation."""
+        with patch("autocommit.utils.pr_token.resolve_pr_token") as mock_token:
+            with patch("autocommit.utils.pr_utils.create_pr") as mock_create:
+                with pytest.raises(RuntimeError, match="push failed"):
+                    apply_commit(
+                        self._make_msg(),
+                        cwd="/tmp",
+                        push_after=True,
+                        auto_pr_enabled=True,
+                    )
+
+        mock_token.assert_not_called()
+        mock_create.assert_not_called()
+
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch", return_value="feature-xyz")
+    def test_public_api_resolves_default_github_token(
+        self, mock_branch, mock_push, mock_commit, monkeypatch
+    ):
+        """Direct apply_commit use resolves GITHUB_TOKEN via bundled config."""
+        monkeypatch.setenv("GITHUB_TOKEN", "public-api-token")
+        with patch(
+            "autocommit.utils.pr_utils.create_pr",
+            return_value="https://github.com/o/r/pull/7",
+        ) as mock_create:
+            url = apply_commit(
+                self._make_msg(),
+                cwd="/tmp",
+                push_after=True,
+                auto_pr_enabled=True,
+            )
+
+        assert url == "https://github.com/o/r/pull/7"
+        assert mock_create.call_args.kwargs["token"] == "public-api-token"
+
+
+class TestGenerateAndCommitAutoPR:
+    @patch("autocommit.core.commit")
+    @patch("autocommit.core.push")
+    @patch("autocommit.core.current_branch", return_value="feature-xyz")
+    @patch(
+        "autocommit.core.generate_commit_message",
+        return_value=CommitMessage("feat: integrated PR", "body"),
+    )
+    def test_configured_auto_pr_runs_through_public_workflow(
+        self, mock_generate, mock_branch, mock_push, mock_commit, monkeypatch
+    ):
+        """generate_and_commit preserves config through token and PR creation."""
+        cfg = {
+            "llm": {},
+            "git": {
+                "push_after_commit": True,
+                "push_set_upstream": True,
+                "auto_pr": {
+                    "enabled": True,
+                    "target_branch": "develop",
+                    "token_env_var": "CUSTOM_PR_TOKEN",
+                },
+            },
+        }
+        monkeypatch.setenv("CUSTOM_PR_TOKEN", "configured-token")
+        with patch(
+            "autocommit.utils.pr_utils.create_pr",
+            return_value="https://github.com/o/r/pull/8",
+        ) as mock_create:
+            message = generate_and_commit(config=cfg, cwd="/tmp")
+
+        assert message == CommitMessage("feat: integrated PR", "body")
+        mock_push.assert_called_once_with("/tmp", set_upstream=True)
+        mock_create.assert_called_once_with(
+            repo_path="/tmp",
+            token="configured-token",
+            head_branch="feature-xyz",
+            base_branch="develop",
+            title="feat: integrated PR",
+            body="body",
+        )

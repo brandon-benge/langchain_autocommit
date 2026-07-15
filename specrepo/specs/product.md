@@ -22,6 +22,8 @@ optional CLI.
 - Extract a ticket identifier from the current branch when configured.
 - Apply the generated commit with optional signoff, amend, and push behavior.
 - Run through CLI flags or the Python API.
+- Automatically create a pull request against a configurable target branch
+  after commit and push (requires optional ``PyGithub`` or ``python-gitlab``).
 - Configure LLM and Git behavior through bundled defaults plus deep-merge
   overrides.
 
@@ -43,6 +45,7 @@ architecture proposal.
 ## Non-Goals
 
 - It is not a general Git porcelain replacement.
-- It does not manage branches, pull requests, or releases.
+- It does not manage branches, merge pull requests, close pull requests, or
+  manage releases. PR creation is supported only as an optional post-push step.
 - It does not guarantee LLM availability.
 - It does not require network access when the fallback local model is available.

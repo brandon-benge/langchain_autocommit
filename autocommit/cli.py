@@ -124,6 +124,18 @@ def main(argv=None):
                     help="Automatically set upstream tracking branch on first push")
     ap.add_argument("--no-push-set-upstream", action="store_false", dest="push_set_upstream", default=None,
                     help="Do not automatically set upstream tracking branch")
+
+    ap.add_argument("--auto-pr", action="store_true", dest="auto_pr", default=None,
+                    help="Enable automatic PR creation after push")
+    ap.add_argument("--no-auto-pr", action="store_false", dest="auto_pr", default=None,
+                    help="Disable automatic PR creation after push")
+    ap.add_argument("--auto-pr-target-branch", type=str, default=None,
+                    help="Target branch for auto-created PR (default: main)")
+    ap.add_argument("--auto-pr-title", type=str, default=None,
+                    help="Title for auto-created PR (default: commit subject)")
+    ap.add_argument("--auto-pr-body", type=str, default=None,
+                    help="Body for auto-created PR (default: commit body)")
+
     ap.add_argument("--signoff", action="store_true", dest="signoff", default=None,
                     help="Add Signed-off-by trailer")
     ap.add_argument("--no-signoff", action="store_false", dest="signoff", default=None,
@@ -241,13 +253,27 @@ def main(argv=None):
     amend = _merge_flag(args.amend, git_cfg.get("allow_amend", False))
     push_after = _merge_flag(args.push, git_cfg.get("push_after_commit", False))
     push_set_upstream = _merge_flag(args.push_set_upstream, git_cfg.get("push_set_upstream", True))
+    auto_pr_enabled = _merge_flag(args.auto_pr, git_cfg.get("auto_pr", {}).get("enabled", False))
+    auto_pr_target_branch = args.auto_pr_target_branch or git_cfg.get("auto_pr", {}).get("target_branch", "main")
 
     try:
-        apply_commit(message, cwd=cwd, signoff=signoff, amend=amend,
-                     push_after=push_after, push_set_upstream=push_set_upstream)
-        print("Committed." if not push_after else "Committed.\n  Pushed.")
+        pr_url = apply_commit(
+            message, cwd=cwd, signoff=signoff, amend=amend,
+            push_after=push_after, push_set_upstream=push_set_upstream,
+            auto_pr_enabled=auto_pr_enabled,
+            auto_pr_target_branch=auto_pr_target_branch,
+            auto_pr_title=args.auto_pr_title,
+            auto_pr_body=args.auto_pr_body,
+            _config=cfg,
+        )
+        msg = "Committed."
+        if push_after:
+            msg += "\n  Pushed."
+        if pr_url:
+            msg += f"\n  PR created: {pr_url}"
+        print(msg)
     except RuntimeError as e:
-        print(f"  Push failed: {e}")
+        print(f"  Error: {e}")
         return 1
 
     return 0

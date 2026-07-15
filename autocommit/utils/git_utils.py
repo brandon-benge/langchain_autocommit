@@ -104,3 +104,44 @@ def infer_scope_from_cwd(cwd: str) -> str:
 def find_ticket(branch: str, pattern: str) -> str:
     m = re.search(pattern, branch)
     return m.group(0) if m else ""
+
+
+def parse_remote_repo(cwd: str) -> tuple[str, str]:
+    """Return (*owner*, *repo*) from the ``origin`` remote URL.
+
+    Supports::
+
+        git@github.com:owner/repo.git
+        https://github.com/owner/repo.git
+        https://github.com/owner/repo
+
+    Raises ``RuntimeError`` if origin is missing or unparseable.
+    """
+    code, out, err = _run("git remote get-url origin", cwd)
+    if code != 0:
+        raise RuntimeError(f"Cannot get remote origin URL: {err}")
+    url = out.strip()
+    if url.endswith(".git"):
+        url = url[:-4]
+    ssh_match = re.search(r"git@[^:]+:(.+?)/(.+?)$", url)
+    if ssh_match:
+        return ssh_match.group(1), ssh_match.group(2)
+    https_match = re.search(r"https?://[^/]+/(.+?)/(.+?)$", url)
+    if https_match:
+        return https_match.group(1), https_match.group(2)
+    raise RuntimeError(f"Unrecognized remote URL format: {out}")
+
+
+def remote_host(cwd: str) -> str:
+    """Return the hostname from the ``origin`` remote URL (e.g. ``github.com``).
+
+    Raises ``RuntimeError`` if origin is missing or the URL cannot be parsed.
+    """
+    code, out, err = _run("git remote get-url origin", cwd)
+    if code != 0:
+        raise RuntimeError(f"Cannot get remote origin URL: {err}")
+    url = out.strip()
+    host_match = re.search(r"@(?P<host>[^:]+):|//(?P<host2>[^/]+)", url)
+    if not host_match:
+        raise RuntimeError(f"Cannot parse host from remote URL: {url}")
+    return host_match.group("host") or host_match.group("host2")

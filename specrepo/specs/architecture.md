@@ -9,9 +9,8 @@ LangChain AutoCommit is a small Python package organized around three layers:
 3. LangChain prompt and JSON parsing in `autocommit/chains/commit_chain.py`.
 
 The package default configuration lives in `autocommit/params.yaml` and is
-loaded by `autocommit/config.py`. The root `params.yaml` is a development
-reference copy and should not be treated as the runtime source of truth unless a
-future approved proposal changes that contract.
+loaded by `autocommit/config.py`. This is the single source of truth for
+runtime defaults.
 
 ## Module Responsibilities
 
@@ -25,6 +24,8 @@ future approved proposal changes that contract.
 | `autocommit/utils/git_utils.py` | Wraps Git subprocess calls and provides path-based commit type, scope, and ticket helpers. |
 | `autocommit/utils/llm_provider.py` | Resolves primary OpenAI-compatible model access and local Ollama fallback. |
 | `autocommit/utils/keychain.py` | Reads and writes API keys through the local keyring backend. |
+| `autocommit/utils/pr_utils.py` | PR creation with provider detection (GitHub via PyGithub, GitLab via python-gitlab). |
+| `autocommit/utils/pr_token.py` | PR API token resolution via environment variable or macOS Keychain. |
 
 ## Commit Message Generation Flow
 
@@ -72,10 +73,19 @@ automatically sets the tracking reference (`git push --set-upstream origin
 <branch>`) before pushing. If `push_set_upstream` is `False` and the
 branch lacks an upstream, the push fails with an error.
 
+When `git.auto_pr.enabled` is `true`, `apply_commit` optionally creates a pull
+request after a successful push. It detects the hosting provider (GitHub /
+GitLab) from the ``origin`` remote URL, resolves an API token via env-var or
+macOS Keychain, and uses the appropriate Python library (``PyGithub`` /
+``python-gitlab``) to create the PR. If the current branch matches
+``git.auto_pr.target_branch``, the PR creation is skipped. The PR title and
+body default to the commit message and can be overridden via keyword arguments.
+The PR URL is returned from ``apply_commit`` (``str | None``).
+
 `generate_and_commit` composes generation and application. It derives signoff,
-amend, push, and push-set-upstream behavior from config unless explicit
-arguments are provided. The `git.push_set_upstream` config key defaults to
-`true` in the bundled `params.yaml`.
+amend, push, push-set-upstream, and auto-PR behavior from config unless
+explicit arguments are provided. The `git.push_set_upstream` config key
+defaults to `true` in the bundled `params.yaml`.
 
 ## LLM Provider Contract
 
@@ -110,6 +120,9 @@ The following `git` keys control commit-and-push behavior:
 | `git.push_set_upstream` | `true` | When pushing and the branch has no upstream, automatically set the upstream tracking reference. Ignored when `push_after_commit` is `false`. |
 | `git.signoff` | `true` | Add a `Signed-off-by` trailer to the commit. |
 | `git.allow_amend` | `false` | Allow amending the previous commit instead of creating a new one. |
+| `git.auto_pr.enabled` | `false` | Enable automatic PR creation after a successful commit and push. |
+| `git.auto_pr.target_branch` | `"main"` | Target branch for the auto-created pull request. |
+| `git.auto_pr.token_env_var` | `"GITHUB_TOKEN"` | Environment variable name containing the PR API token. |
 
 Feature work that adds config keys must update:
 

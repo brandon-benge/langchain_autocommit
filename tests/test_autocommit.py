@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from autocommit.cli import _build_llm_overrides, _build_quality_overrides, _merge_config_overrides
-from autocommit.core import _bool
+from autocommit.core import CommitMessage, _bool
 
 
 def _merge_flag(flag_val, config_val, default=False):
@@ -444,3 +444,143 @@ class TestCliArgs:
             result = main()
             assert result == 0
             assert mock_load.call_args.kwargs.get("config_path") is None
+
+
+class TestCliAutoPRFlags:
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_flag_enables(self, mock_load, mock_generate, mock_apply):
+        """--auto-pr flag enables PR creation."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": False, "target_branch": "main"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+        mock_apply.return_value = "https://github.com/o/r/pull/1"
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--push", "--auto-pr"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_enabled"] is True
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_no_auto_pr_flag_disables(self, mock_load, mock_generate, mock_apply):
+        """--no-auto-pr flag disables PR creation even when config says enabled."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--no-auto-pr"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_enabled"] is False
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_target_branch_override(self, mock_load, mock_generate, mock_apply):
+        """--auto-pr-target-branch overrides config value."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "develop"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--auto-pr-target-branch", "staging"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_target_branch"] == "staging"
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_title_body_flags(self, mock_load, mock_generate, mock_apply):
+        """--auto-pr-title and --auto-pr-body flags pass through to apply_commit."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+
+        with patch.object(sys, "argv", [
+            "autocommit", "-y",
+            "--auto-pr-title", "PR Title",
+            "--auto-pr-body", "PR Body",
+        ]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        call_kwargs = mock_apply.call_args.kwargs
+        assert call_kwargs["auto_pr_title"] == "PR Title"
+        assert call_kwargs["auto_pr_body"] == "PR Body"
+
+    @patch("autocommit.cli.apply_commit")
+    @patch("autocommit.cli.generate_commit_message")
+    @patch("autocommit.cli.load_config")
+    def test_auto_pr_prints_url(self, mock_load, mock_generate, mock_apply, capsys):
+        """PR URL is printed in CLI output when PR is created."""
+        mock_load.return_value = {
+            "llm": {},
+            "git": {"auto_pr": {"enabled": True, "target_branch": "main"}},
+        }
+        mock_generate.return_value = MagicMock(subject="feat: test", body="body")
+        mock_apply.return_value = "https://github.com/o/r/pull/42"
+
+        with patch.object(sys, "argv", ["autocommit", "-y", "--push", "--auto-pr"]):
+            from autocommit.cli import main
+            result = main()
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "PR created: https://github.com/o/r/pull/42" in captured.out
+
+    def test_cli_config_reaches_real_token_resolution(
+        self, mocker, monkeypatch, capsys
+    ):
+        """CLI passes its effective config through the real apply workflow."""
+        cfg = {
+            "llm": {},
+            "git": {
+                "push_after_commit": True,
+                "auto_pr": {
+                    "enabled": True,
+                    "target_branch": "main",
+                    "token_env_var": "CLI_PR_TOKEN",
+                },
+            },
+        }
+        mocker.patch("autocommit.cli.load_config", return_value=cfg)
+        mocker.patch(
+            "autocommit.cli.generate_commit_message",
+            return_value=CommitMessage("feat: CLI PR", "body"),
+        )
+        mocker.patch("autocommit.core.commit")
+        mocker.patch("autocommit.core.push")
+        mocker.patch("autocommit.core.current_branch", return_value="feature-cli")
+        mock_create = mocker.patch(
+            "autocommit.utils.pr_utils.create_pr",
+            return_value="https://github.com/o/r/pull/99",
+        )
+        monkeypatch.setenv("CLI_PR_TOKEN", "cli-configured-token")
+
+        from autocommit.cli import main
+        result = main(["-y"])
+
+        assert result == 0
+        assert mock_create.call_args.kwargs["token"] == "cli-configured-token"
+        assert "PR created: https://github.com/o/r/pull/99" in capsys.readouterr().out

@@ -37,6 +37,14 @@ git:
     min_body_lines: 3    # Min body lines required for the quality check to pass
     check_boilerplate: true  # Reject boilerplate or generic commit bodies
 
+  auto_pr:
+    enabled: false           # Enable automatic PR creation after push
+    target_branch: main      # Branch to target for the pull request
+    token_env_var: GITHUB_TOKEN  # Env var for the PR API token
+    # keychain:               # (disabled) Uncomment to use macOS Keychain
+    #   service: "langchain_autocommit"
+    #   key: "github_token"
+
 paths:
   logs_dir: "logs"  # Directory for log output (relative to project root)
   temp_dir: "tmp"   # Directory for temporary files (relative to project root)

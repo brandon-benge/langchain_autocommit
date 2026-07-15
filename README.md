@@ -20,10 +20,12 @@ New in v2: installable **Python library** with a clean programmatic API, deep-me
 | `autocommit/utils/git_utils.py` | Lightweight Git wrapper using subprocess |
 | `autocommit/utils/llm_provider.py` | LLM provider resolution with automatic fallback |
 | `autocommit/utils/keychain.py` | macOS Keychain wrapper; env var also supported |
+| `autocommit/utils/pr_token.py` | Pull-request API token resolution from an environment variable or macOS Keychain |
+| `autocommit/utils/pr_utils.py` | GitHub/GitLab pull-request creation and provider detection |
 | `autocommit/params.yaml` | Bundled default configuration |
 | `pyproject.toml` | Package metadata and dependencies |
 | `run_venv.sh` | Development setup script — creates a `.venv`, installs deps, and builds the package |
-| `tests/` | pytest suite (138 tests) |
+| `tests/` | pytest suite (183 tests) |
 
 ---
 
@@ -174,8 +176,18 @@ def apply_commit(
     amend: bool = False,
     push_after: bool = False,
     push_set_upstream: bool = True,
-) -> None
+    auto_pr_enabled: bool | None = None,
+    auto_pr_target_branch: str | None = None,
+    auto_pr_title: str | None = None,
+    auto_pr_body: str | None = None,
+) -> str | None
 ```
+
+When automatic PR creation is enabled, `apply_commit()` creates the PR only
+after a requested push completes successfully. It returns the created PR URL,
+or `None` when no PR is created. Direct callers use the bundled auto-PR token
+configuration unless the call comes through a config-aware workflow such as
+the CLI or `generate_and_commit()`.
 
 ### Full `generate_and_commit()` Signature
 
@@ -246,6 +258,14 @@ git:
     min_body_lines: 3    # Min body lines required for the quality check to pass
     check_boilerplate: true  # Reject boilerplate or generic commit bodies
 
+  auto_pr:
+    enabled: false           # Create a PR after a successful push
+    target_branch: main      # Base branch for the PR
+    token_env_var: GITHUB_TOKEN
+    # keychain:
+    #   service: langchain_autocommit
+    #   key: github_token
+
 paths:
   logs_dir: "logs"  # Directory for log output (relative to project root)
   temp_dir: "tmp"   # Directory for temporary files (relative to project root)
@@ -285,6 +305,11 @@ paths:
 | **git.quality** | `max_retries` | Max quality-check retries when the draft fails validation |
 |  | `min_body_lines` | Min body lines required for the quality check to pass |
 |  | `check_boilerplate` | If true, reject boilerplate or generic commit bodies |
+| **git.auto_pr** | `enabled` | If true, create a PR after a successful push |
+|  | `target_branch` | Base branch for the created PR (default `main`) |
+|  | `token_env_var` | Environment variable containing the provider API token (default `GITHUB_TOKEN`) |
+|  | `keychain.service` | Optional macOS Keychain service for the provider token |
+|  | `keychain.key` | Optional macOS Keychain key for the provider token |
 | **paths** | `logs_dir` | Directory for log output (relative to project root) |
 |  | `temp_dir` | Directory for temporary files (relative to project root) |
 
@@ -379,6 +404,42 @@ autocommit --keychain --keychain-service "myapp" --keychain-key "prod_key"
 
 > **Important:** Only ONE method may be active at a time. Enabling `--keychain` automatically disables the env var method (and vice versa). Passing both explicitly raises an error.
 
+### Pull-request token and optional dependencies
+
+Automatic PR creation is disabled by default. Install the provider integration
+you need:
+
+```bash
+# GitHub; the auto-pr extra is currently a GitHub convenience alias
+pip install 'langchain-autocommit[auto-pr]'
+
+# GitLab
+pip install 'langchain-autocommit[gitlab]'
+```
+
+For GitHub, set the environment variable named by
+`git.auto_pr.token_env_var` (default `GITHUB_TOKEN`):
+
+```bash
+export GITHUB_TOKEN="your-github-token"
+```
+
+For GitLab, point `token_env_var` at a GitLab token variable and install the
+separate `gitlab` extra:
+
+```yaml
+git:
+  auto_pr:
+    enabled: true
+    target_branch: main
+    token_env_var: GITLAB_TOKEN
+```
+
+As an alternative to an environment variable, configure
+`git.auto_pr.keychain.service` and `git.auto_pr.keychain.key` in YAML. The PR
+token is never printed. PR creation requires push to be enabled and is skipped
+with an informational log when the current branch already matches the target.
+
 ---
 
 ## CLI Usage (Optional)
@@ -417,6 +478,10 @@ autocommit --model deepseek-v4-pro --config-file ./project-config.yaml --push-se
 | `--amend` / `--no-amend` | Enable/disable amending |
 | `--push` / `--no-push` | Enable/disable push after commit |
 | `--push-set-upstream` / `--no-push-set-upstream` | Enable/disable automatic upstream tracking branch setup |
+| `--auto-pr` / `--no-auto-pr` | Enable/disable PR creation after a successful push |
+| `--auto-pr-target-branch BRANCH` | Override the PR target branch |
+| `--auto-pr-title TEXT` | Override the PR title (default: commit subject) |
+| `--auto-pr-body TEXT` | Override the PR body (default: commit body) |
 | `--signoff` / `--no-signoff` | Enable/disable Signed-off-by |
 | `--conventional` / `--no-conventional` | Enable/disable conventional format |
 | | **Quality loop** |
