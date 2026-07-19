@@ -17,6 +17,10 @@ llm:
     model: "qwen3:8b"                    # Model identifier for the fallback LLM
     temperature: 0.2                     # LLM sampling temperature (0.0–1.0)
     max_tokens: 4096                     # Max tokens in the fallback LLM response
+    # env_var: "FALLBACK_API_KEY"        # (optional) Env var for fallback ChatOpenAI
+    # keychain:                          # (optional) macOS Keychain for fallback ChatOpenAI
+    #   service: "langchain_autocommit"
+    #   key: "fallback_api_key"
 
 git:
   autostage_all: true      # Auto-stage all unstaged files before generating commit
