@@ -2,8 +2,8 @@ project_name: "LangChain AutoCommit"  # Display name for logs and metadata
 python_version: "3.10"                # Minimum supported Python version
 llm:
   primary:
-    base_url: "https://opencode.ai/zen/go/v1"  # Base URL for the primary LLM API
-    model: "deepseek-v4-flash"                  # Model identifier for the primary LLM
+    base_url: "https://opencode.ai/zen/v1"  # Base URL for the primary LLM API
+    model: "deepseek-v4-flash-free"          # Model identifier for the primary LLM
     temperature: 0.2                            # LLM sampling temperature (0.0–1.0)
     max_tokens: 512                             # Max tokens in the LLM response
     timeout: 60                                 # Request timeout in seconds
