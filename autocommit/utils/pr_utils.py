@@ -256,7 +256,7 @@ def _enable_auto_merge(provider: str, pr_obj, merge_method: str) -> None:
 def _enable_github_auto_merge(pr, merge_method: str) -> None:
     """Enable auto-merge on a GitHub PR via PyGithub.
 
-    PyGithub 2.x+ supports ``enable_auto_merge``.
+    PyGithub 2.x+ supports ``enable_automerge``.
     """
     method_map = {
         "merge": "MERGE",
@@ -265,10 +265,10 @@ def _enable_github_auto_merge(pr, merge_method: str) -> None:
     }
     github_method = method_map[merge_method]
     try:
-        pr.enable_auto_merge(merge_method=github_method)
+        pr.enable_automerge(merge_method=github_method)
     except AttributeError:
         raise RuntimeError(
-            "Your PyGithub version does not support enable_auto_merge. "
+            "Your PyGithub version does not support enable_automerge. "
             "Upgrade with: pip install --upgrade PyGithub>=2.0"
         )
 
