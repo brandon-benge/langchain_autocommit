@@ -201,7 +201,7 @@ class TestCreatePRAndAutoMerge:
 
     @patch("autocommit.utils.pr_utils._run")
     def test_github_auto_merge_enabled(self, mock_run):
-        """GitHub: auto_merge=True calls enable_auto_merge with correct method."""
+        """GitHub: auto_merge=True calls enable_automerge with correct method."""
         mock_run.return_value = (0, "git@github.com:my-org/my-repo.git", "")
 
         mock_github = MagicMock()
@@ -224,7 +224,7 @@ class TestCreatePRAndAutoMerge:
             )
 
         assert url == "https://github.com/my-org/my-repo/pull/42"
-        mock_pr.enable_auto_merge.assert_called_once_with(merge_method="SQUASH")
+        mock_pr.enable_automerge.assert_called_once_with(merge_method="SQUASH")
 
     @patch("autocommit.utils.pr_utils._run")
     def test_github_auto_merge_default_method(self, mock_run):
@@ -249,11 +249,11 @@ class TestCreatePRAndAutoMerge:
             )
 
         assert url == "https://github.com/my-org/my-repo/pull/1"
-        mock_pr.enable_auto_merge.assert_called_once_with(merge_method="MERGE")
+        mock_pr.enable_automerge.assert_called_once_with(merge_method="MERGE")
 
     @patch("autocommit.utils.pr_utils._run")
     def test_github_auto_merge_disabled(self, mock_run):
-        """GitHub: auto_merge=False does NOT call enable_auto_merge."""
+        """GitHub: auto_merge=False does NOT call enable_automerge."""
         mock_run.return_value = (0, "git@github.com:my-org/my-repo.git", "")
 
         mock_github = MagicMock()
@@ -274,7 +274,7 @@ class TestCreatePRAndAutoMerge:
             )
 
         assert url == "https://github.com/my-org/my-repo/pull/1"
-        mock_pr.enable_auto_merge.assert_not_called()
+        mock_pr.enable_automerge.assert_not_called()
 
     @patch("autocommit.utils.pr_utils._run")
     def test_gitlab_auto_merge_enabled(self, mock_run):
@@ -362,20 +362,20 @@ class TestCreatePRAndAutoMerge:
 
     @patch("autocommit.utils.pr_utils._run")
     def test_github_auto_merge_old_library(self, mock_run):
-        """Old PyGithub without enable_auto_merge raises RuntimeError."""
+        """Old PyGithub without enable_automerge raises RuntimeError."""
         mock_run.return_value = (0, "git@github.com:owner/repo.git", "")
 
         mock_github = MagicMock()
         mock_repo = MagicMock()
         mock_pr = MagicMock()
         mock_pr.html_url = "https://github.com/owner/repo/pull/1"
-        # Simulate old library: no enable_auto_merge method
-        del mock_pr.enable_auto_merge
+        # Simulate old library: no enable_automerge method
+        del mock_pr.enable_automerge
         mock_repo.create_pull.return_value = mock_pr
         mock_github.get_repo.return_value = mock_repo
 
         with patch("github.Github", return_value=mock_github):
-            with pytest.raises(RuntimeError, match="does not support enable_auto_merge"):
+            with pytest.raises(RuntimeError, match="does not support enable_automerge"):
                 create_pr_and_auto_merge(
                     repo_path="/fake/path",
                     token="token",
