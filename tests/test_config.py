@@ -106,7 +106,7 @@ class TestLoadConfigWithConfigPath:
         result = load_config(overrides=overrides)
         assert result["git"]["autostage_all"] is False
         # Other keys from bundled file survive
-        assert result["llm"]["primary"]["model"] == "deepseek-v4-flash"
+        assert result["llm"]["primary"]["model"] == "deepseek-v4-flash-free"
 
 
 class TestLoadConfigWithAutoCommitParamsEnvVar:
