@@ -28,6 +28,8 @@ optional CLI.
   YAML path selected by `AUTOCOMMIT_PARAMS`, an explicit `--config-file` or
   Python `config_path`, and deep-merge overrides. Explicit paths take priority
   over the environment, which takes priority over the bundled file.
+- Warn when the primary LLM fails mid-generation and the fallback model is
+  used; the warning names the failed step and includes the primary error.
 
 ## Public API
 

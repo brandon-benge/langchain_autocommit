@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import concurrent.futures
-from typing import TypedDict
+import warnings
+from typing import Callable, NamedTuple, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import JsonOutputParser
@@ -148,35 +149,98 @@ class GraphState(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def _call_llm(
-    chain,  # RunnableSequence built from prompt | llm | parser
-    **kwargs,
-) -> dict | None:
-    """Call an LLM chain and return parsed JSON, or None on failure."""
+class _LLMCall(NamedTuple):
+    """Result of a single LLM chain call: parsed dict or a failure reason."""
+
+    result: dict | None   # parsed dict when the call succeeded
+    error: str | None     # human-readable reason when result is None
+
+
+_MAX_ERROR_TEXT = 300
+
+# Reason used when an LLM call returns without raising but produces output
+# that cannot be parsed into the expected dict shape.
+_NON_DICT_REASON = "returned non-dict output (unparseable)"
+
+
+def _safe_error_text(error: Exception) -> str:
+    """Format an exception for warnings, bounded to avoid dumping request
+    bodies or credentials into output."""
+    text = f"{type(error).__name__}: {error}".strip()
+    if len(text) > _MAX_ERROR_TEXT:
+        text = text[:_MAX_ERROR_TEXT] + "..."
+    return text
+
+
+def _call_llm(chain, **kwargs) -> _LLMCall:
+    """Call an LLM chain and return parsed JSON plus a failure reason.
+
+    Returns a ``_LLMCall(result, error)``: ``result`` is the parsed dict on
+    success (``error`` is ``None``), or ``result`` is ``None`` with ``error``
+    set to a human-readable reason on failure (exception text or an
+    unparseable-output note).
+    """
     try:
         result = chain.invoke(kwargs)
         if isinstance(result, dict):
-            return result
-        return None
-    except Exception:
-        return None
+            return _LLMCall(result=result, error=None)
+        return _LLMCall(result=None, error=_NON_DICT_REASON)
+    except Exception as e:
+        return _LLMCall(result=None, error=_safe_error_text(e))
+
+
+def _warn_fallback(task_label: str, reason: str, call_failed: bool = True) -> None:
+    """Emit a UserWarning that the fallback LLM branch is being entered.
+
+    ``call_failed`` selects phrasing: exception text uses "call failed",
+    while an unparseable (non-exception) result reads as "produced no usable
+    result".
+    """
+    if call_failed:
+        failure = "primary LLM call failed"
+    else:
+        failure = "primary LLM call produced no usable result"
+    warnings.warn(
+        f"{task_label}: {failure} ({reason}); "
+        "falling back to the fallback LLM.",
+        UserWarning,
+        stacklevel=2,
+    )
 
 
 def _call_with_fallback(
     prompt: PromptTemplate,
     llm: BaseChatModel,
     fallback_llm: BaseChatModel | None,
+    *,
+    task_label: str,
+    on_error: Callable[[str], None] | None = None,
     **kwargs,
 ) -> dict | None:
-    """Try primary LLM, then fallback. Returns parsed dict or None."""
+    """Try primary LLM, then fallback. Returns parsed dict or None.
+
+    Emits a ``UserWarning`` (naming the failed sub-task and including the
+    primary error) when the fallback branch is entered — the primary attempt
+    failed and ``fallback_llm`` is configured — regardless of whether the
+    fallback attempt itself succeeds. No warning fires on primary success or
+    when ``fallback_llm is None``.
+
+    ``task_label`` identifies which agent fell back (e.g. ``"analyze_type"``).
+    The optional ``on_error`` callback receives the enriched primary failure
+    reason (e.g. ``"analyze_type: primary failed (ConnectionError: ...)"``)
+    for ``state.errors`` bookkeeping.
+    """
     parser = JsonOutputParser()
-    chain = prompt | llm | parser
-    result = _call_llm(chain, **kwargs)
-    if result is not None:
-        return result
+    primary = _call_llm(prompt | llm | parser, **kwargs)
+    if primary.result is not None:
+        return primary.result
     if fallback_llm is not None:
-        fb_chain = prompt | fallback_llm | parser
-        return _call_llm(fb_chain, **kwargs)
+        reason = primary.error or "no usable parsed result"
+        _warn_fallback(task_label, reason, call_failed=reason != _NON_DICT_REASON)
+        if on_error is not None:
+            on_error(f"{task_label}: primary failed ({reason})")
+        fallback = _call_llm(prompt | fallback_llm | parser, **kwargs)
+        return fallback.result
     return None
 
 
@@ -327,12 +391,21 @@ def build_graph(
             "truncated_warning": warning,
         }
 
+        # Errors list lives here so the worker-thread on_error callback can
+        # append enriched primary-failure reasons (list.append is atomic).
+        errs: list[str] = []
+
+        def record_primary_failure(reason: str) -> None:
+            errs.append(reason)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             type_future = pool.submit(
                 _call_with_fallback,
                 ANALYZE_TYPE_PROMPT,
                 state["primary_llm"],
                 state.get("fallback_llm"),
+                task_label="analyze_type",
+                on_error=record_primary_failure,
                 **kwargs,
             )
             scope_future = pool.submit(
@@ -340,13 +413,14 @@ def build_graph(
                 ANALYZE_SCOPE_PROMPT,
                 state["primary_llm"],
                 state.get("fallback_llm"),
+                task_label="analyze_scope",
+                on_error=record_primary_failure,
                 **kwargs,
             )
             type_result = type_future.result()
             scope_result = scope_future.result()
 
         diff_analysis: dict = {}
-        errs: list[str] = []
 
         if type_result and "type" in type_result:
             diff_analysis["content_type"] = str(type_result["type"])
@@ -411,10 +485,17 @@ def build_graph(
             "max_subject_length": state["max_subject_length"],
         }
 
+        errs: list[str] = list(state.get("errors", []))
+
+        def record_primary_failure(reason: str) -> None:
+            errs.append(reason)
+
         result = _call_with_fallback(
             WRITE_MESSAGE_PROMPT,
             state["primary_llm"],
             state.get("fallback_llm"),
+            task_label="write_message",
+            on_error=record_primary_failure,
             **kwargs,
         )
 
@@ -422,13 +503,14 @@ def build_graph(
             return {
                 "draft_subject": (result.get("subject") or "").strip(),
                 "draft_body": (result.get("body") or "").strip(),
+                "errors": errs,
             }
 
         # LLM failed entirely — signal downstream to use fallback
         return {
             "draft_subject": "",
             "draft_body": "",
-            "errors": state.get("errors", []) + ["write_message: no valid result"],
+            "errors": errs + ["write_message: no valid result"],
         }
 
     def check_quality_node(state: GraphState) -> dict:

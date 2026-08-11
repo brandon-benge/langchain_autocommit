@@ -23,6 +23,12 @@ Feature changes must include focused tests for the affected layer:
 - Config loading and deep-merge behavior in config-focused tests.
 - Prompt, parser, or graph topology behavior in `tests/test_commit_chain.py`
   when model input, output, or graph structure changes.
+- Fallback warning emission in `tests/test_commit_chain.py` when the fallback
+  path changes: deterministic, local tests (mocked LLMs, no network, no running
+  Ollama server) asserting the warning names the failed sub-task and includes
+  the primary error, that no warning fires on primary success or when no
+  fallback is configured, and that `state.errors` is enriched with the primary
+  failure reason.
 
 ## Compatibility Rules
 

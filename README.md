@@ -273,7 +273,7 @@ The utility prioritizes **factual accuracy** by sending the LLM a rich view of t
    - **Diff analyzer** — Runs `analyze_type` and `analyze_scope` LLM sub-tasks concurrently on the full diff.
    - **Message writer** — Consumes the structured analysis plus the raw diff to produce a draft `CommitMessage`.
    - **Quality checker** — Runs deterministic rules on the draft. If checks fail and the retry budget (`git.quality.max_retries`, default 2) is not exhausted, routes back to the message writer with a critique.
-5. **Graceful fallback** — If all LLM agents fail or return unparseable output, a heuristics-based body is generated listing the changed files.
+5. **Graceful fallback** — If all LLM agents fail or return unparseable output, a heuristics-based body is generated listing the changed files. When a primary LLM call fails and the fallback model is used, a warning naming the failed step may appear in CLI output.
 
 ### Data Flow
 

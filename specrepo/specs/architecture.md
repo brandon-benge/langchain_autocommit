@@ -55,7 +55,12 @@ runtime defaults.
      is not exhausted, the graph routes back to `write_message` with a
      critique. Otherwise it routes to output.
 10. Each LLM agent node tries the primary provider first; on failure it retries
-    with the fallback Ollama model. If both fail, the node records an error.
+    with the fallback Ollama model. When the primary call fails and a fallback
+    LLM is configured, the node emits a `UserWarning` (via `warnings.warn`)
+    naming the failed agent and including the primary error, before retrying
+    with the fallback. The enriched primary-failure reason is also appended to
+    `state.errors` alongside the existing `"<task>: no valid result"` entries.
+    If both attempts fail, the node records an error.
 11. If the output is missing or empty, `generate_commit_message` returns a
     deterministic fallback subject and body based on changed files.
 12. It truncates the subject to the configured maximum and appends committer
