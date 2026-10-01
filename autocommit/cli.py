@@ -223,19 +223,23 @@ def main(argv=None):
     max_subject = args.max_subject_length if args.max_subject_length > 0 else int(git_cfg.get("max_subject_length", 72))
     cwd = os.getcwd()
 
-    message = generate_commit_message(
-        config=cfg,
-        config_overrides=None,
-        type=args.type or None,
-        scope=args.scope or None,
-        ticket=args.ticket or None,
-        context=args.context,
-        committer=args.committer,
-        max_subject_length=max_subject,
-        cwd=cwd,
-        autostage=_merge_flag(args.autostage, git_cfg.get("autostage_all", False)),
-        conventional=_merge_flag(args.conventional, git_cfg.get("conventional", True)),
-    )
+    try:
+        message = generate_commit_message(
+            config=cfg,
+            config_overrides=None,
+            type=args.type or None,
+            scope=args.scope or None,
+            ticket=args.ticket or None,
+            context=args.context,
+            committer=args.committer,
+            max_subject_length=max_subject,
+            cwd=cwd,
+            autostage=_merge_flag(args.autostage, git_cfg.get("autostage_all", False)),
+            conventional=_merge_flag(args.conventional, git_cfg.get("conventional", True)),
+        )
+    except RuntimeError as e:
+        print(f"  Error: {e}")
+        return 1
 
     if not message.subject:
         print("  No changes detected in the repository.")

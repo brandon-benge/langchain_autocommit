@@ -59,6 +59,31 @@ class TestResolveLLM:
         assert name == "ollama"
         assert llm is mock_instance
 
+    def test_keyless_primary_uses_its_own_ollama_config(self, mocker):
+        mock_chatollama = mocker.patch("autocommit.utils.llm_provider.ChatOllama")
+        mock_chatopenai = mocker.patch("autocommit.utils.llm_provider.ChatOpenAI")
+
+        cfg = {
+            "primary": {
+                "base_url": "http://primary:11434",
+                "model": "primary-model",
+                "temperature": 0.1,
+                "max_tokens": 512,
+            },
+            "fallback": {"model": "fb-model", "base_url": "http://localhost:11434"},
+        }
+
+        llm, name = resolve_llm(cfg)
+        assert name == "ollama"
+        assert llm is mock_chatollama.return_value
+        mock_chatopenai.assert_not_called()
+        call_kwargs = mock_chatollama.call_args.kwargs
+        assert call_kwargs["base_url"] == "http://primary:11434"
+        assert call_kwargs["model"] == "primary-model"
+        assert call_kwargs["temperature"] == 0.1
+        assert call_kwargs["num_predict"] == 512
+        assert call_kwargs["reasoning"] is False
+
     def test_fallback_when_env_var_missing(self, mocker):
         mock_chatollama = mocker.patch("autocommit.utils.llm_provider.ChatOllama")
         mock_instance = mocker.MagicMock()
@@ -226,6 +251,7 @@ class TestBuildFallbackLLM:
             model="custom-model",
             temperature=0.5,
             num_predict=1000,
+            reasoning=False,
         )
 
     def test_builds_openai_when_env_var_set(self, mocker):

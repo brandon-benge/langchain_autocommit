@@ -57,11 +57,25 @@ def _build_chat_openai(cfg: dict, defaults: dict) -> ChatOpenAI:
     )
 
 
+def _build_chat_ollama(cfg: dict, defaults: dict) -> ChatOllama:
+    """Build ChatOllama from provider config merged with defaults."""
+    return ChatOllama(
+        base_url=cfg.get("base_url", defaults.get("base_url", "http://localhost:11434")),
+        model=cfg.get("model", defaults.get("model", "qwen3:8b")),
+        temperature=float(cfg.get("temperature", defaults.get("temperature", 0.2))),
+        num_predict=int(cfg.get("max_tokens", defaults.get("max_tokens", 4096))),
+        # Thinking models (e.g. qwen3.x) otherwise spend num_predict on hidden
+        # reasoning and return empty content, which breaks JSON parsing.
+        reasoning=False,
+    )
+
+
 def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:
     """Build primary LLM or fall back. Returns (llm, provider_name).
 
     Resolution order:
       1. Primary     → ChatOpenAI (env_var / keychain)  → "opencode"
+                     → ChatOllama (no key source)       → "ollama"
       2. Fallback    → ChatOpenAI (env_var / keychain)  → "opencode-fallback"
       3. Ultimate    → ChatOllama (local)               → "ollama"
     """
@@ -76,10 +90,12 @@ def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:
             "Choose one method for providing the API key."
         )
 
+    # No key source configured → treat primary as a keyless local Ollama endpoint
+    if not primary.get("env_var") and not primary.get("keychain"):
+        return _build_chat_ollama(primary, fallback), "ollama"
+
     try:
         api_key = _resolve_api_key(primary)
-        if api_key is None:
-            raise ValueError("No API key source configured (keychain or env_var)")
         primary["_api_key"] = api_key
         llm = _build_chat_openai(primary, {
             "model": "deepseek-v4-flash",
@@ -109,13 +125,7 @@ def resolve_llm(llm_cfg: dict) -> Tuple[BaseChatModel, str]:
 
     # --- Tier 3 : Local Ollama ---------------------------------------------------
     print("  Falling back to Ollama (local).")
-    llm = ChatOllama(
-        base_url=fallback.get("base_url", "http://localhost:11434"),
-        model=fallback.get("model", "qwen3:8b"),
-        temperature=float(fallback.get("temperature", 0.2)),
-        num_predict=int(fallback.get("max_tokens", 4096)),
-    )
-    return llm, "ollama"
+    return _build_chat_ollama(fallback, {}), "ollama"
 
 
 def build_fallback_llm(llm_cfg: dict) -> BaseChatModel:
@@ -139,9 +149,4 @@ def build_fallback_llm(llm_cfg: dict) -> BaseChatModel:
     except ValueError as e:
         print(f"  Fallback ChatOpenAI setup failed ({e}). Using Ollama.")
 
-    return ChatOllama(
-        base_url=fallback.get("base_url", "http://localhost:11434"),
-        model=fallback.get("model", "qwen3:8b"),
-        temperature=float(fallback.get("temperature", 0.2)),
-        num_predict=int(fallback.get("max_tokens", 4096)),
-    )
+    return _build_chat_ollama(fallback, {})

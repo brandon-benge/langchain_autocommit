@@ -283,6 +283,19 @@ class TestCliArgs:
             result = main()
             assert result == 0
 
+    def test_not_a_git_repo_prints_error(self, mocker, capsys):
+        mocker.patch("autocommit.cli.load_config", return_value={"llm": {}, "git": {}})
+        mocker.patch("autocommit.cli.generate_commit_message",
+                     side_effect=RuntimeError("Not a git repository: /tmp"))
+        mock_apply = mocker.patch("autocommit.cli.apply_commit")
+
+        with patch.object(sys, "argv", ["autocommit", "-y"]):
+            from autocommit.cli import main
+            result = main()
+            assert result == 1
+            assert "Error: Not a git repository: /tmp" in capsys.readouterr().out
+            mock_apply.assert_not_called()
+
     def test_yes_flag_skips_confirmation(self, mocker):
         mocker.patch("autocommit.cli.load_config", return_value={
             "llm": {}, "git": {"default_type": "feat", "conventional": False, "scope_from_folder": False}
